@@ -17,15 +17,17 @@ const workQueue: {
   system_prompt: string;
   prompt: string;
   answers: string[];
+  originalTestIndex: number;
 }[] = [];
 
-technical_test.tests.forEach((test) => {
+technical_test.tests.forEach((test, testIndex) => {
   modelsToRun.map((model) => {
     workQueue.push({
       model,
       system_prompt: technical_test.system_prompt,
       prompt: test.prompt,
       answers: test.answers,
+      originalTestIndex: testIndex,
     });
   });
 });
@@ -35,12 +37,17 @@ async function runTest(input: {
   system_prompt: string;
   prompt: string;
   answers: string[];
+  originalTestIndex: number;
 }) {
   const { model, system_prompt, prompt } = input;
 
-  // Create a timeout promise
+  // Create a timeout promise with cleanup
+  let timeoutId: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("Test timeout")), TIMEOUT_SECONDS * 1000);
+    timeoutId = setTimeout(
+      () => reject(new Error("Test timeout")),
+      TIMEOUT_SECONDS * 1000
+    );
   });
 
   async function internal__testRun() {
@@ -74,8 +81,12 @@ async function runTest(input: {
   // Race between test and timeout
   try {
     const result = await Promise.race([internal__testRun(), timeoutPromise]);
+    // Clear the timeout since we got a result
+    if (timeoutId) clearTimeout(timeoutId);
     return result;
   } catch (error) {
+    // Clear the timeout in case of error too
+    if (timeoutId) clearTimeout(timeoutId);
     console.error(`Test failed for model ${model.name}:`, error);
     throw error;
   }
@@ -174,12 +185,12 @@ async function testRunner() {
     testIndex: number;
   }> = [];
 
-  workQueue.forEach((workItem, testIndex) => {
+  workQueue.forEach((workItem) => {
     for (let runNumber = 1; runNumber <= TEST_RUNS_PER_MODEL; runNumber++) {
       allTestRuns.push({
         ...workItem,
         runNumber,
-        testIndex,
+        testIndex: workItem.originalTestIndex,
       });
     }
   });
@@ -213,7 +224,13 @@ async function testRunner() {
         console.log(
           `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
         );
-        const result = await runTest(testRun);
+        const result = await runTest({
+          model: testRun.model,
+          system_prompt: testRun.system_prompt,
+          prompt: testRun.prompt,
+          answers: testRun.answers,
+          originalTestIndex: testRun.testIndex,
+        });
         const duration = Date.now() - startTime;
 
         results.push({
