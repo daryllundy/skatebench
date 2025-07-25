@@ -39,14 +39,20 @@ function isCorrect(input: {
   negative_answers?: string[];
   result: string;
 }) {
+  const resultLower = input.result.toLowerCase();
+
   if (input.negative_answers) {
     if (
-      input.negative_answers.some((answer) => input.result.includes(answer))
+      input.negative_answers.some((answer) =>
+        resultLower.includes(answer.toLowerCase())
+      )
     ) {
       return false;
     }
   }
-  return input.answers.some((answer) => input.result.includes(answer));
+  return input.answers.some((answer) =>
+    resultLower.includes(answer.toLowerCase())
+  );
 }
 
 async function runTest(input: {
