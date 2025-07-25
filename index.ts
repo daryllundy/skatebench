@@ -366,6 +366,91 @@ async function testRunner() {
 
     await writeFile(markdownFilepath, markdownContent, "utf-8");
     console.log(`Markdown report saved to: ${markdownFilepath}`);
+
+    // Generate and save summary JSON
+    const summaryFilename = `summary-${timestamp}.json`;
+    const summaryFilepath = join(OUTPUT_DIRECTORY, summaryFilename);
+
+    // Calculate model statistics
+    const modelStats = results.reduce(
+      (acc, result) => {
+        if (!acc[result.model]) {
+          acc[result.model] = {
+            successful: 0,
+            failed: 0,
+            totalDuration: 0,
+            totalTests: 0,
+          };
+        }
+        acc[result.model].totalTests++;
+        if (result.error) {
+          acc[result.model].failed++;
+        } else {
+          acc[result.model].successful++;
+        }
+        acc[result.model].totalDuration += result.duration;
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          successful: number;
+          failed: number;
+          totalDuration: number;
+          totalTests: number;
+        }
+      >
+    );
+
+    // Calculate success rates and rank models
+    const modelRankings = Object.entries(modelStats)
+      .map(([modelName, stats]) => ({
+        model: modelName,
+        successful: stats.successful,
+        failed: stats.failed,
+        totalTests: stats.totalTests,
+        successRate:
+          stats.totalTests > 0
+            ? (stats.successful / stats.totalTests) * 100
+            : 0,
+        averageDuration:
+          stats.totalTests > 0
+            ? Math.round(stats.totalDuration / stats.totalTests)
+            : 0,
+      }))
+      .sort((a, b) => {
+        // Sort by success rate (descending), then by average duration (ascending) as tiebreaker
+        if (b.successRate !== a.successRate) {
+          return b.successRate - a.successRate;
+        }
+        return a.averageDuration - b.averageDuration;
+      });
+
+    const summaryData = {
+      rankings: modelRankings,
+      metadata: {
+        timestamp: new Date().toISOString(),
+        totalModels: modelRankings.length,
+        totalTestsRun: results.length,
+        overallSuccessful: successful,
+        overallFailed: failed,
+        overallSuccessRate:
+          results.length > 0 ? (successful / results.length) * 100 : 0,
+        config: {
+          maxConcurrency: MAX_CONCURRENCY,
+          testRunsPerModel: TEST_RUNS_PER_MODEL,
+          timeoutSeconds: TIMEOUT_SECONDS,
+        },
+        testSuite: technical_test.name,
+      },
+    };
+
+    await writeFile(
+      summaryFilepath,
+      JSON.stringify(summaryData, null, 2),
+      "utf-8"
+    );
+    console.log(`Summary saved to: ${summaryFilepath}`);
   } catch (error) {
     console.error("Failed to save results to file:", error);
   }
