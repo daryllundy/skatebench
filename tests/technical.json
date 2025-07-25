@@ -5,7 +5,12 @@
   "tests": [
     {
       "prompt": "Board spins 360 degrees backside and flips in the kickflip direction. The skater does not spin.",
-      "answers": ["tre flip", "360 flip"]
+      "answers": ["tre flip", "360 flip"],
+      "negative_answers": [
+        "backside 360 kickflip",
+        "backside 360 flip",
+        "360 heelflip"
+      ]
     },
     {
       "prompt": "Board spins 360 degrees frontside and flips in the heelflip direction. The skater does not spin.",
@@ -13,23 +18,31 @@
     },
     {
       "prompt": "Board spins 180 degrees frontside and flips in the kickflip direction. The skater does not spin.",
-      "answers": ["hardflip"]
+      "answers": ["hardflip"],
+      "negative_answers": [
+        "frontside flip",
+        "hard luck flip",
+        "varial kickflip"
+      ]
     },
     {
       "prompt": "Board spins 180 degrees backside and flips in the kickflip direction. The skater does not spin.",
-      "answers": ["varial"]
+      "answers": ["varial"],
+      "negative_answers": ["backside 180 kickflip", "backside flip"]
     },
     {
       "prompt": "Board spins 180 degrees frontside and flips in the heelflip direction. The skater does not spin.",
-      "answers": ["varial heel"]
+      "answers": ["varial heel"],
+      "negative_answers": ["frontside 180 heelflip", "laser flip"]
     },
     {
       "prompt": "Board spins 180 degrees backside and flips in the heelflip direction. The skater does not spin.",
-      "answers": ["inward heel"]
+      "answers": ["inward heel"],
+      "negative_answers": ["varial heel", "backside heel"]
     },
     {
       "prompt": "Board spins 360 degrees backside and flips in the kickflip direction. The skater spins 180 degrees",
-      "answers": ["big flip"]
+      "answers": ["big flip", "bigflip"]
     }
   ]
 }

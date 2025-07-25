@@ -17,6 +17,7 @@ const workQueue: {
   system_prompt: string;
   prompt: string;
   answers: string[];
+  negative_answers?: string[];
   originalTestIndex: number;
 }[] = [];
 
@@ -27,19 +28,36 @@ technical_test.tests.forEach((test, testIndex) => {
       system_prompt: technical_test.system_prompt,
       prompt: test.prompt,
       answers: test.answers,
+      negative_answers: test.negative_answers,
       originalTestIndex: testIndex,
     });
   });
 });
+
+function isCorrect(input: {
+  answers: string[];
+  negative_answers?: string[];
+  result: string;
+}) {
+  if (input.negative_answers) {
+    if (
+      input.negative_answers.some((answer) => input.result.includes(answer))
+    ) {
+      return false;
+    }
+  }
+  return input.answers.some((answer) => input.result.includes(answer));
+}
 
 async function runTest(input: {
   model: RunnableModel;
   system_prompt: string;
   prompt: string;
   answers: string[];
+  negative_answers?: string[];
   originalTestIndex: number;
 }) {
-  const { model, system_prompt, prompt } = input;
+  const { model, system_prompt, prompt, answers, negative_answers } = input;
 
   // Create a timeout promise with cleanup
   let timeoutId: NodeJS.Timeout | undefined;
@@ -68,13 +86,17 @@ async function runTest(input: {
       },
     });
 
+    const correctness = isCorrect({
+      answers,
+      negative_answers,
+      result: testResult.text,
+    });
+
     return {
       model: model.name,
       prompt,
       result: testResult,
-      correct: input.answers.map((answer) =>
-        testResult.text.toLowerCase().includes(answer.toLowerCase())
-      ),
+      correct: correctness,
     };
   }
 
@@ -136,6 +158,12 @@ function generateMarkdownReport(
       markdown += `**Prompt:** "${firstResult.prompt}"\n\n`;
       markdown += `**Expected answers:** ${firstResult.expectedAnswers.map((a) => `"${a}"`).join(", ")}\n\n`;
 
+      // Add negative answers if they exist
+      const testData = technical_test.tests[parseInt(testIndex)];
+      if (testData.negative_answers && testData.negative_answers.length > 0) {
+        markdown += `**Negative answers (automatic fail):** ${testData.negative_answers.map((a) => `"${a}"`).join(", ")}\n\n`;
+      }
+
       // Sort results by model name, then by run number
       const sortedResults = testResults.sort((a, b) => {
         if (a.model !== b.model) {
@@ -154,8 +182,7 @@ function generateMarkdownReport(
             "No text response";
           // Trim whitespace and normalize newlines
           const answer = rawAnswer.trim().replace(/\s+/g, " ");
-          const isCorrect =
-            result.result.correct?.some((c: boolean) => c) || false;
+          const isCorrect = result.result.correct || false;
           const status = isCorrect ? "✅" : "❌";
           markdown += `**${result.model} answer ${result.runNumber}:** ${status} "${answer}"\n\n`;
         }
@@ -181,6 +208,7 @@ async function testRunner() {
     system_prompt: string;
     prompt: string;
     answers: string[];
+    negative_answers?: string[];
     runNumber: number;
     testIndex: number;
   }> = [];
@@ -229,6 +257,7 @@ async function testRunner() {
           system_prompt: testRun.system_prompt,
           prompt: testRun.prompt,
           answers: testRun.answers,
+          negative_answers: testRun.negative_answers,
           originalTestIndex: testRun.testIndex,
         });
         const duration = Date.now() - startTime;
