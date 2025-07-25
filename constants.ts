@@ -13,15 +13,22 @@ export type RunnableModel = {
   reasoning?: boolean;
 };
 
+// Include "usage" so we can log cost
+const defaultProviderOptions = {
+  usage: {
+    include: true,
+  },
+};
+
 export const modelsToRun: RunnableModel[] = [
   {
     name: "grok-4",
-    llm: openrouter("x-ai/grok-4"),
+    llm: openrouter("x-ai/grok-4", defaultProviderOptions),
     reasoning: true,
   },
   {
     name: "kimi-k2",
-    llm: openrouter("moonshotai/kimi-k2"),
+    llm: openrouter("moonshotai/kimi-k2", defaultProviderOptions),
     reasoning: true,
   },
   // {
@@ -30,7 +37,7 @@ export const modelsToRun: RunnableModel[] = [
   // },
   {
     name: "gemini-2.5-pro",
-    llm: openrouter("google/gemini-2.5-pro-preview"),
+    llm: openrouter("google/gemini-2.5-pro-preview", defaultProviderOptions),
     reasoning: true,
   },
   // {
@@ -40,17 +47,17 @@ export const modelsToRun: RunnableModel[] = [
   // },
   {
     name: "qwen-3-32b",
-    llm: openrouter("qwen/qwen3-32b"),
+    llm: openrouter("qwen/qwen3-32b", defaultProviderOptions),
     reasoning: true,
   },
   {
     name: "claude-4-sonnet",
-    llm: openrouter("anthropic/claude-sonnet-4"),
+    llm: openrouter("anthropic/claude-sonnet-4", defaultProviderOptions),
     reasoning: true,
   },
   {
     name: "claude-4-opus",
-    llm: openrouter("anthropic/claude-opus-4"),
+    llm: openrouter("anthropic/claude-opus-4", defaultProviderOptions),
     reasoning: true,
   },
   // {
@@ -68,7 +75,7 @@ export const modelsToRun: RunnableModel[] = [
   // },
   {
     name: "o4-mini",
-    llm: openrouter("openai/o4-mini"),
+    llm: openrouter("openai/o4-mini", defaultProviderOptions),
     reasoning: true,
   },
 ];

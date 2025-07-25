@@ -317,9 +317,14 @@ async function testRunner() {
   console.log(`\nTest runner completed. Total results: ${results.length}`);
 
   // Log summary
-  const successful = results.filter((r) => !r.error).length;
-  const failed = results.filter((r) => r.error).length;
-  console.log(`Successful: ${successful}, Failed: ${failed}`);
+  const correct = results.filter((r) => !r.error && r.result?.correct).length;
+  const incorrect = results.filter(
+    (r) => !r.error && !r.result?.correct
+  ).length;
+  const errors = results.filter((r) => r.error).length;
+  console.log(
+    `Correct: ${correct}, Incorrect: ${incorrect}, Errors: ${errors}`
+  );
 
   // Save results to file
   try {
@@ -339,8 +344,9 @@ async function testRunner() {
       metadata: {
         timestamp: new Date().toISOString(),
         totalTests: results.length,
-        successful,
-        failed,
+        correct,
+        incorrect,
+        errors,
         config: {
           maxConcurrency: MAX_CONCURRENCY,
           testRunsPerModel: TEST_RUNS_PER_MODEL,
@@ -376,17 +382,20 @@ async function testRunner() {
       (acc, result) => {
         if (!acc[result.model]) {
           acc[result.model] = {
-            successful: 0,
-            failed: 0,
+            correct: 0,
+            incorrect: 0,
+            errors: 0,
             totalDuration: 0,
             totalTests: 0,
           };
         }
         acc[result.model].totalTests++;
         if (result.error) {
-          acc[result.model].failed++;
+          acc[result.model].errors++;
+        } else if (result.result?.correct) {
+          acc[result.model].correct++;
         } else {
-          acc[result.model].successful++;
+          acc[result.model].incorrect++;
         }
         acc[result.model].totalDuration += result.duration;
         return acc;
@@ -394,8 +403,9 @@ async function testRunner() {
       {} as Record<
         string,
         {
-          successful: number;
-          failed: number;
+          correct: number;
+          incorrect: number;
+          errors: number;
           totalDuration: number;
           totalTests: number;
         }
@@ -406,13 +416,14 @@ async function testRunner() {
     const modelRankings = Object.entries(modelStats)
       .map(([modelName, stats]) => ({
         model: modelName,
-        successful: stats.successful,
-        failed: stats.failed,
+        correct: stats.correct,
+        incorrect: stats.incorrect,
+        errors: stats.errors,
         totalTests: stats.totalTests,
         successRate:
-          stats.totalTests > 0
-            ? (stats.successful / stats.totalTests) * 100
-            : 0,
+          stats.totalTests > 0 ? (stats.correct / stats.totalTests) * 100 : 0,
+        errorRate:
+          stats.totalTests > 0 ? (stats.errors / stats.totalTests) * 100 : 0,
         averageDuration:
           stats.totalTests > 0
             ? Math.round(stats.totalDuration / stats.totalTests)
@@ -432,10 +443,13 @@ async function testRunner() {
         timestamp: new Date().toISOString(),
         totalModels: modelRankings.length,
         totalTestsRun: results.length,
-        overallSuccessful: successful,
-        overallFailed: failed,
+        overallCorrect: correct,
+        overallIncorrect: incorrect,
+        overallErrors: errors,
         overallSuccessRate:
-          results.length > 0 ? (successful / results.length) * 100 : 0,
+          results.length > 0 ? (correct / results.length) * 100 : 0,
+        overallErrorRate:
+          results.length > 0 ? (errors / results.length) * 100 : 0,
         config: {
           maxConcurrency: MAX_CONCURRENCY,
           testRunsPerModel: TEST_RUNS_PER_MODEL,
@@ -471,28 +485,40 @@ async function main() {
     const modelSummary = results.reduce(
       (acc, result) => {
         if (!acc[result.model]) {
-          acc[result.model] = { successful: 0, failed: 0, totalDuration: 0 };
+          acc[result.model] = {
+            correct: 0,
+            incorrect: 0,
+            errors: 0,
+            totalDuration: 0,
+          };
         }
         if (result.error) {
-          acc[result.model].failed++;
+          acc[result.model].errors++;
+        } else if (result.result?.correct) {
+          acc[result.model].correct++;
         } else {
-          acc[result.model].successful++;
+          acc[result.model].incorrect++;
         }
         acc[result.model].totalDuration += result.duration;
         return acc;
       },
       {} as Record<
         string,
-        { successful: number; failed: number; totalDuration: number }
+        {
+          correct: number;
+          incorrect: number;
+          errors: number;
+          totalDuration: number;
+        }
       >
     );
 
     Object.entries(modelSummary).forEach(([model, stats]) => {
       const avgDuration = Math.round(
-        stats.totalDuration / (stats.successful + stats.failed)
+        stats.totalDuration / (stats.correct + stats.incorrect + stats.errors)
       );
       console.log(
-        `${model}: ${stats.successful} successful, ${stats.failed} failed, avg ${avgDuration}ms`
+        `${model}: ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms`
       );
     });
   } catch (error) {
