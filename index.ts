@@ -98,11 +98,24 @@ async function runTest(input: {
       result: testResult.text,
     });
 
+    // Extract cost from providerMetadata
+    let cost = 0;
+    if (testResult.providerMetadata) {
+      // Check for openrouter cost
+      const openrouterMeta = testResult.providerMetadata.openrouter as any;
+      if (openrouterMeta?.usage?.cost) {
+        cost = openrouterMeta.usage.cost;
+      }
+      // Check for other providers if needed
+      // Add more provider cost extraction logic here as needed
+    }
+
     return {
       model: model.name,
       prompt,
       result: testResult,
       correct: correctness,
+      cost,
     };
   }
 
@@ -240,6 +253,7 @@ async function testRunner() {
     result?: any;
     error?: string;
     duration: number;
+    cost: number;
   }> = [];
 
   // Create a semaphore to limit concurrency
@@ -276,6 +290,7 @@ async function testRunner() {
           expectedAnswers: testRun.answers,
           result,
           duration,
+          cost: (result as any).cost || 0,
         });
 
         console.log(
@@ -294,6 +309,7 @@ async function testRunner() {
           expectedAnswers: testRun.answers,
           error: errorMessage,
           duration,
+          cost: 0, // No cost if it failed
         });
 
         console.log(
@@ -387,6 +403,7 @@ async function testRunner() {
             errors: 0,
             totalDuration: 0,
             totalTests: 0,
+            totalCost: 0,
           };
         }
         acc[result.model].totalTests++;
@@ -398,6 +415,7 @@ async function testRunner() {
           acc[result.model].incorrect++;
         }
         acc[result.model].totalDuration += result.duration;
+        acc[result.model].totalCost += result.cost;
         return acc;
       },
       {} as Record<
@@ -408,6 +426,7 @@ async function testRunner() {
           errors: number;
           totalDuration: number;
           totalTests: number;
+          totalCost: number;
         }
       >
     );
@@ -428,6 +447,9 @@ async function testRunner() {
           stats.totalTests > 0
             ? Math.round(stats.totalDuration / stats.totalTests)
             : 0,
+        totalCost: stats.totalCost,
+        averageCostPerTest:
+          stats.totalTests > 0 ? stats.totalCost / stats.totalTests : 0,
       }))
       .sort((a, b) => {
         // Sort by success rate (descending), then by average duration (ascending) as tiebreaker
@@ -450,6 +472,12 @@ async function testRunner() {
           results.length > 0 ? (correct / results.length) * 100 : 0,
         overallErrorRate:
           results.length > 0 ? (errors / results.length) * 100 : 0,
+        totalCost: results.reduce((sum, result) => sum + result.cost, 0),
+        averageCostPerTest:
+          results.length > 0
+            ? results.reduce((sum, result) => sum + result.cost, 0) /
+              results.length
+            : 0,
         config: {
           maxConcurrency: MAX_CONCURRENCY,
           testRunsPerModel: TEST_RUNS_PER_MODEL,
@@ -490,6 +518,7 @@ async function main() {
             incorrect: 0,
             errors: 0,
             totalDuration: 0,
+            totalCost: 0,
           };
         }
         if (result.error) {
@@ -500,6 +529,7 @@ async function main() {
           acc[result.model].incorrect++;
         }
         acc[result.model].totalDuration += result.duration;
+        acc[result.model].totalCost += result.cost;
         return acc;
       },
       {} as Record<
@@ -509,16 +539,18 @@ async function main() {
           incorrect: number;
           errors: number;
           totalDuration: number;
+          totalCost: number;
         }
       >
     );
 
     Object.entries(modelSummary).forEach(([model, stats]) => {
-      const avgDuration = Math.round(
-        stats.totalDuration / (stats.correct + stats.incorrect + stats.errors)
-      );
+      const totalTests = stats.correct + stats.incorrect + stats.errors;
+      const avgDuration = Math.round(stats.totalDuration / totalTests);
+      const avgCost =
+        totalTests > 0 ? (stats.totalCost / totalTests).toFixed(6) : "0.000000";
       console.log(
-        `${model}: ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms`
+        `${model}: ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms, total cost $${stats.totalCost.toFixed(6)}, avg cost $${avgCost}/test`
       );
     });
   } catch (error) {

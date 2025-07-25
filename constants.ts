@@ -1,7 +1,7 @@
 export const OUTPUT_DIRECTORY = "./results";
 
 export const MAX_CONCURRENCY = 25;
-export const TEST_RUNS_PER_MODEL = 4;
+export const TEST_RUNS_PER_MODEL = 5;
 export const TIMEOUT_SECONDS = 200;
 
 import { type LanguageModel } from "ai";
@@ -29,22 +29,17 @@ export const modelsToRun: RunnableModel[] = [
   {
     name: "kimi-k2",
     llm: openrouter("moonshotai/kimi-k2", defaultProviderOptions),
-    reasoning: true,
   },
-  // {
-  //   name: "gemini-2.0-flash",
-  //   llm: openrouter("google/gemini-2.0-flash-001"),
-  // },
   {
     name: "gemini-2.5-pro",
     llm: openrouter("google/gemini-2.5-pro-preview", defaultProviderOptions),
     reasoning: true,
   },
-  // {
-  //   name: "grok-3-mini",
-  //   llm: openrouter("x-ai/grok-3-mini-beta"),
-  //   reasoning: true,
-  // },
+  {
+    name: "grok-3-mini",
+    llm: openrouter("x-ai/grok-3-mini-beta", defaultProviderOptions),
+    reasoning: true,
+  },
   {
     name: "qwen-3-32b",
     llm: openrouter("qwen/qwen3-32b", defaultProviderOptions),
@@ -60,22 +55,31 @@ export const modelsToRun: RunnableModel[] = [
     llm: openrouter("anthropic/claude-opus-4", defaultProviderOptions),
     reasoning: true,
   },
-  // {
-  //   name: "claude-3-5-sonnet",
-  //   llm: openrouter("anthropic/claude-3.5-sonnet"),
-  // },
-  // {
-  //   name: "claude-3-7-sonnet",
-  //   llm: openrouter("anthropic/claude-3.7-sonnet"),
-  // },
-  // {
-  //   name: "claude-3-7-sonnet-thinking",
-  //   llm: openrouter("anthropic/claude-3.7-sonnet:thinking"),
-  //   reasoning: true,
-  // },
   {
     name: "o4-mini",
     llm: openrouter("openai/o4-mini", defaultProviderOptions),
+    reasoning: true,
+  },
+
+  // Unused at this point
+  {
+    name: "gemini-2.0-flash",
+    llm: openrouter("google/gemini-2.0-flash-001", defaultProviderOptions),
+  },
+  {
+    name: "claude-3-5-sonnet",
+    llm: openrouter("anthropic/claude-3.5-sonnet", defaultProviderOptions),
+  },
+  {
+    name: "claude-3-7-sonnet",
+    llm: openrouter("anthropic/claude-3.7-sonnet", defaultProviderOptions),
+  },
+  {
+    name: "claude-3-7-sonnet-thinking",
+    llm: openrouter(
+      "anthropic/claude-3.7-sonnet:thinking",
+      defaultProviderOptions
+    ),
     reasoning: true,
   },
 ];
