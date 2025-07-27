@@ -12,14 +12,16 @@ import { mkdir, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 
-const workQueue: {
+type WorkItem = {
   model: RunnableModel;
   system_prompt: string;
   prompt: string;
   answers: string[];
   negative_answers?: string[];
   originalTestIndex: number;
-}[] = [];
+};
+
+const workQueue: WorkItem[] = [];
 
 technical_test.tests.forEach((test, testIndex) => {
   modelsToRun.map((model) => {
@@ -215,14 +217,13 @@ function generateMarkdownReport(
 
 async function testRunner() {
   console.log(
-    `Starting test runner with ${workQueue.length} base tests, ${TEST_RUNS_PER_MODEL} runs each`
+    `Starting test runner with ${technical_test.tests.length} tests, ${modelsToRun.length} models, ${TEST_RUNS_PER_MODEL} runs each`
   );
   console.log(
     `Concurrency limit: ${MAX_CONCURRENCY}, Timeout: ${TIMEOUT_SECONDS}s`
   );
 
-  // Create all test runs (each base test runs TEST_RUNS_PER_MODEL times)
-  const allTestRuns: Array<{
+  type TestRun = {
     model: RunnableModel;
     system_prompt: string;
     prompt: string;
@@ -230,19 +231,7 @@ async function testRunner() {
     negative_answers?: string[];
     runNumber: number;
     testIndex: number;
-  }> = [];
-
-  workQueue.forEach((workItem) => {
-    for (let runNumber = 1; runNumber <= TEST_RUNS_PER_MODEL; runNumber++) {
-      allTestRuns.push({
-        ...workItem,
-        runNumber,
-        testIndex: workItem.originalTestIndex,
-      });
-    }
-  });
-
-  console.log(`Total test runs to execute: ${allTestRuns.length}`);
+  };
 
   const results: Array<{
     model: string;
@@ -256,79 +245,117 @@ async function testRunner() {
     cost: number;
   }> = [];
 
-  // Create a semaphore to limit concurrency
-  let activeJobs = 0;
-  const jobQueue = [...allTestRuns];
-
-  async function worker(): Promise<void> {
-    while (jobQueue.length > 0) {
-      const testRun = jobQueue.shift();
-      if (!testRun) break;
-
-      activeJobs++;
-      const startTime = Date.now();
-
-      try {
-        console.log(
-          `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
-        );
-        const result = await runTest({
-          model: testRun.model,
-          system_prompt: testRun.system_prompt,
-          prompt: testRun.prompt,
-          answers: testRun.answers,
-          negative_answers: testRun.negative_answers,
-          originalTestIndex: testRun.testIndex,
-        });
-        const duration = Date.now() - startTime;
-
-        results.push({
-          model: testRun.model.name,
-          testIndex: testRun.testIndex,
-          runNumber: testRun.runNumber,
-          prompt: testRun.prompt,
-          expectedAnswers: testRun.answers,
-          result,
-          duration,
-          cost: (result as any).cost || 0,
-        });
-
-        console.log(
-          `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
-        );
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-
-        results.push({
-          model: testRun.model.name,
-          testIndex: testRun.testIndex,
-          runNumber: testRun.runNumber,
-          prompt: testRun.prompt,
-          expectedAnswers: testRun.answers,
-          error: errorMessage,
-          duration,
-          cost: 0, // No cost if it failed
-        });
-
-        console.log(
-          `✗ Failed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}: ${errorMessage}`
-        );
-      } finally {
-        activeJobs--;
-      }
-    }
-  }
-
-  // Start worker threads up to MAX_CONCURRENCY
-  const workers = Array.from(
-    { length: Math.min(MAX_CONCURRENCY, allTestRuns.length) },
-    () => worker()
+  // Group work items by test index
+  const itemsByTest = workQueue.reduce(
+    (acc, item) => {
+      const idx = item.originalTestIndex;
+      (acc[idx] ||= []).push(item);
+      return acc;
+    },
+    {} as Record<number, WorkItem[]>
   );
 
-  // Wait for all workers to complete
-  await Promise.all(workers);
+  async function processJobQueue(jobQueue: TestRun[]) {
+    let activeJobs = 0;
+
+    async function worker(): Promise<void> {
+      while (jobQueue.length > 0) {
+        const testRun = jobQueue.shift();
+        if (!testRun) break;
+
+        activeJobs++;
+        const startTime = Date.now();
+
+        try {
+          console.log(
+            `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
+          );
+          const result = await runTest({
+            model: testRun.model,
+            system_prompt: testRun.system_prompt,
+            prompt: testRun.prompt,
+            answers: testRun.answers,
+            negative_answers: testRun.negative_answers,
+            originalTestIndex: testRun.testIndex,
+          });
+          const duration = Date.now() - startTime;
+
+          results.push({
+            model: testRun.model.name,
+            testIndex: testRun.testIndex,
+            runNumber: testRun.runNumber,
+            prompt: testRun.prompt,
+            expectedAnswers: testRun.answers,
+            result,
+            duration,
+            cost: (result as any).cost || 0,
+          });
+
+          console.log(
+            `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
+          );
+        } catch (error) {
+          const duration = Date.now() - startTime;
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+
+          results.push({
+            model: testRun.model.name,
+            testIndex: testRun.testIndex,
+            runNumber: testRun.runNumber,
+            prompt: testRun.prompt,
+            expectedAnswers: testRun.answers,
+            error: errorMessage,
+            duration,
+            cost: 0,
+          });
+
+          console.log(
+            `✗ Failed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}: ${errorMessage}`
+          );
+        } finally {
+          activeJobs--;
+        }
+      }
+    }
+
+    const workers = Array.from(
+      { length: Math.min(MAX_CONCURRENCY, jobQueue.length) },
+      () => worker()
+    );
+
+    await Promise.all(workers);
+  }
+
+  // Build and process jobs one test at a time, interleaving models per run
+  const sortedTestIndices = Object.keys(itemsByTest)
+    .map((k) => parseInt(k))
+    .sort((a, b) => a - b);
+
+  for (const testIndex of sortedTestIndices) {
+    const items = itemsByTest[testIndex]!;
+
+    const jobQueue: TestRun[] = [];
+    for (let runNumber = 1; runNumber <= TEST_RUNS_PER_MODEL; runNumber++) {
+      for (const item of items) {
+        jobQueue.push({
+          model: item.model,
+          system_prompt: item.system_prompt,
+          prompt: item.prompt,
+          answers: item.answers,
+          negative_answers: item.negative_answers,
+          runNumber,
+          testIndex,
+        });
+      }
+    }
+
+    console.log(
+      `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models`
+    );
+
+    await processJobQueue(jobQueue);
+  }
 
   console.log(`\nTest runner completed. Total results: ${results.length}`);
 
@@ -363,6 +390,8 @@ async function testRunner() {
         correct,
         incorrect,
         errors,
+        successful: correct,
+        failed: incorrect + errors,
         config: {
           maxConcurrency: MAX_CONCURRENCY,
           testRunsPerModel: TEST_RUNS_PER_MODEL,
