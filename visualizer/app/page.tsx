@@ -50,6 +50,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const SkateboardSVG = ({
   className,
@@ -121,6 +122,69 @@ function barValueLabel(suffix: string, decimals: number) {
   };
 }
 
+function barValueLabelHorizontal(suffix: string, decimals: number) {
+  return (props: any) => {
+    const x = Number(props?.x ?? 0);
+    const y = Number(props?.y ?? 0);
+    const width = Number(props?.width ?? 0);
+    const height = Number(props?.height ?? 0);
+    const value = Number(props?.value ?? 0);
+    const cx = x + width + 6;
+    const cy = y + height / 2;
+    return (
+      <text
+        x={cx}
+        y={cy}
+        dy={3}
+        textAnchor="start"
+        className="pointer-events-none text-xs font-medium fill-neutral-300"
+      >
+        {value.toFixed(decimals)}
+        {suffix}
+      </text>
+    );
+  };
+}
+
+function barValueLabelHorizontalSmart(
+  suffix: string,
+  decimals: number,
+  maxValue: number
+) {
+  return (props: any) => {
+    const x = Number(props?.x ?? 0);
+    const y = Number(props?.y ?? 0);
+    const width = Number(props?.width ?? 0);
+    const height = Number(props?.height ?? 0);
+    const value = Number(props?.value ?? 0);
+    const ratio = maxValue > 0 ? value / maxValue : 0;
+    const inside = ratio >= 0.75; // place inside for longer bars
+    const tx = inside ? x + width - 6 : x + width + 6;
+    const anchor: any = inside ? "end" : "start";
+    const cls = inside
+      ? "pointer-events-none text-[10px] font-medium fill-neutral-50"
+      : "pointer-events-none text-[10px] font-medium fill-neutral-300";
+    return (
+      <text
+        x={tx}
+        y={y + height / 2}
+        dy={3}
+        textAnchor={anchor}
+        className={cls}
+      >
+        {value.toFixed(decimals)}
+        {suffix}
+      </text>
+    );
+  };
+}
+
+function truncateLabel(input: unknown, max = 14) {
+  const label = String(input ?? "");
+  if (label.length <= max) return label;
+  return label.slice(0, Math.max(1, max - 1)) + "…";
+}
+
 export default function BenchmarkVisualizer() {
   const { rankings, metadata } = benchmarkData as {
     rankings: ModelData[];
@@ -134,6 +198,9 @@ export default function BenchmarkVisualizer() {
   const filteredRankings = rankings.filter((m) =>
     selectedModels.includes(m.model)
   );
+
+  const isMobile = useIsMobile();
+  const mobileBarHeight = Math.max(320, filteredRankings.length * 36 + 120);
 
   const totalTestsPerModel = rankings[0]?.totalTests ?? 0;
 
@@ -149,10 +216,9 @@ export default function BenchmarkVisualizer() {
   const costData = filteredRankings
     .map((m) => ({
       model: m.model,
-      costPerTest: Number((m.averageCostPerTest * 100).toFixed(3)),
       totalCost: Number(m.totalCost.toFixed(4)),
     }))
-    .sort((a, b) => a.costPerTest - b.costPerTest);
+    .sort((a, b) => a.totalCost - b.totalCost);
 
   const speedData = filteredRankings
     .map((m) => ({
@@ -199,8 +265,11 @@ export default function BenchmarkVisualizer() {
   const handleSelectAll = () => setSelectedModels(rankings.map((m) => m.model));
   const handleDeselectAll = () => setSelectedModels([]);
 
+  const costMax = Math.max(0, ...costData.map((d) => d.totalCost));
+  const speedMax = Math.max(0, ...speedData.map((d) => d.duration));
+
   return (
-    <div className="relative min-h-screen bg-neutral-950 text-neutral-100">
+    <div className="relative min-h-screen overflow-x-hidden bg-neutral-950 text-neutral-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_800px_at_10%_0%,rgba(59,130,246,0.18),transparent_70%),radial-gradient(1200px_800px_at_90%_0%,rgba(34,197,94,0.14),transparent_70%),radial-gradient(900px_700px_at_50%_100%,rgba(234,88,12,0.14),transparent_70%)]" />
 
       <header className="relative mx-auto max-w-7xl px-4 pt-6 pb-2">
@@ -356,11 +425,17 @@ export default function BenchmarkVisualizer() {
                       color: "hsl(142, 76%, 36%)",
                     },
                   }}
-                  className="h-[420px] sm:h-[520px]"
+                  className="h-[420px] sm:h-[520px] w-full"
+                  style={isMobile ? { height: mobileBarHeight } : undefined}
                 >
                   <BarChart
                     data={successRateData}
-                    margin={{ top: 10, right: 24, left: 12, bottom: 64 }}
+                    layout={isMobile ? "vertical" : "horizontal"}
+                    margin={
+                      isMobile
+                        ? { top: 10, right: 24, left: 140, bottom: 24 }
+                        : { top: 10, right: 24, left: 12, bottom: 64 }
+                    }
                   >
                     <defs>
                       {successRateData.map((d) => {
@@ -388,33 +463,67 @@ export default function BenchmarkVisualizer() {
                       })}
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#303341" />
-                    <XAxis
-                      dataKey="model"
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                      fontSize={12}
-                      stroke="#9ca3af"
-                    />
-                    <YAxis
-                      label={{
-                        value: "Success Rate (%)",
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "#9ca3af",
-                      }}
-                      stroke="#9ca3af"
-                    />
+                    {isMobile ? (
+                      <>
+                        <XAxis
+                          type="number"
+                          domain={[0, 100]}
+                          label={{
+                            value: "Success Rate (%)",
+                            position: "insideBottom",
+                            offset: -10,
+                            fill: "#9ca3af",
+                          }}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="model"
+                          width={12}
+                          tick={{ fontSize: 12, fill: "#9ca3af" }}
+                          tickFormatter={(v: string) => truncateLabel(v)}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <XAxis
+                          dataKey="model"
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          fontSize={12}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          label={{
+                            value: "Success Rate (%)",
+                            angle: -90,
+                            position: "insideLeft",
+                            fill: "#9ca3af",
+                          }}
+                          domain={[0, 100]}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    )}
                     <ChartTooltip
                       content={<ChartTooltipContent />}
-                      formatter={(value: any) => [`${value}%`, "Success Rate"]}
+                      formatter={(value: any) => [`${value}% Success Rate`]}
                       labelFormatter={(label: string) => `Model: ${label}`}
                     />
-                    <Bar dataKey="successRate" radius={[6, 6, 0, 0]}>
+                    <Bar
+                      dataKey="successRate"
+                      radius={isMobile ? [0, 6, 6, 0] : [6, 6, 0, 0]}
+                    >
                       <LabelList
                         dataKey="successRate"
-                        position="top"
-                        content={barValueLabel("%", 1)}
+                        position={isMobile ? "right" : "top"}
+                        content={
+                          isMobile
+                            ? barValueLabelHorizontalSmart("%", 1, 100)
+                            : barValueLabel("%", 1)
+                        }
                       />
                       {successRateData.map((entry) => (
                         <Cell
@@ -443,16 +552,22 @@ export default function BenchmarkVisualizer() {
               <CardContent>
                 <ChartContainer
                   config={{
-                    costPerTest: {
+                    totalCost: {
                       label: "Cost per Test",
                       color: "hsl(217, 91%, 60%)",
                     },
                   }}
-                  className="h-[420px] sm:h-[520px]"
+                  className="h-[420px] sm:h-[520px] w-full"
+                  style={isMobile ? { height: mobileBarHeight } : undefined}
                 >
                   <BarChart
                     data={costData}
-                    margin={{ top: 10, right: 24, left: 12, bottom: 64 }}
+                    layout={isMobile ? "vertical" : "horizontal"}
+                    margin={
+                      isMobile
+                        ? { top: 10, right: 24, left: 140, bottom: 24 }
+                        : { top: 10, right: 24, left: 12, bottom: 64 }
+                    }
                   >
                     <defs>
                       {costData.map((d) => {
@@ -480,33 +595,67 @@ export default function BenchmarkVisualizer() {
                       })}
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#303341" />
-                    <XAxis
-                      dataKey="model"
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                      fontSize={12}
-                      stroke="#9ca3af"
-                    />
-                    <YAxis
-                      label={{
-                        value: "Cost per Test (¢)",
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "#9ca3af",
-                      }}
-                      stroke="#9ca3af"
-                    />
+                    {isMobile ? (
+                      <>
+                        <XAxis
+                          type="number"
+                          label={{
+                            value: "Cost to run tests",
+                            position: "insideBottom",
+                            offset: -10,
+                            fill: "#9ca3af",
+                          }}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="model"
+                          width={12}
+                          tick={{ fontSize: 12, fill: "#9ca3af" }}
+                          tickFormatter={(v: string) => truncateLabel(v)}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <XAxis
+                          dataKey="model"
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          fontSize={12}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          label={{
+                            value: "Cost per Test (¢)",
+                            angle: -90,
+                            position: "insideLeft",
+                            fill: "#9ca3af",
+                          }}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    )}
                     <ChartTooltip
                       content={<ChartTooltipContent />}
-                      formatter={(value: any) => [`${value}¢`, "Cost per Test"]}
+                      formatter={(value: any) => [
+                        `Avg cost: \$${value} per test`,
+                      ]}
                       labelFormatter={(label: string) => `Model: ${label}`}
                     />
-                    <Bar dataKey="costPerTest" radius={[6, 6, 0, 0]}>
+                    <Bar
+                      dataKey="totalCost"
+                      radius={isMobile ? [0, 6, 6, 0] : [6, 6, 0, 0]}
+                    >
                       <LabelList
-                        dataKey="costPerTest"
-                        position="top"
-                        content={barValueLabel("¢", 2)}
+                        dataKey="totalCost"
+                        position={isMobile ? "right" : "top"}
+                        content={
+                          isMobile
+                            ? barValueLabelHorizontalSmart("", 2, costMax || 1)
+                            : barValueLabel("", 2)
+                        }
                       />
                       {costData.map((entry) => (
                         <Cell
@@ -540,11 +689,17 @@ export default function BenchmarkVisualizer() {
                       color: "hsl(262, 83%, 58%)",
                     },
                   }}
-                  className="h-[420px] sm:h-[520px]"
+                  className="h-[420px] sm:h-[520px] w-full"
+                  style={isMobile ? { height: mobileBarHeight } : undefined}
                 >
                   <BarChart
                     data={speedData}
-                    margin={{ top: 10, right: 24, left: 12, bottom: 64 }}
+                    layout={isMobile ? "vertical" : "horizontal"}
+                    margin={
+                      isMobile
+                        ? { top: 10, right: 24, left: 140, bottom: 24 }
+                        : { top: 10, right: 24, left: 12, bottom: 64 }
+                    }
                   >
                     <defs>
                       {speedData.map((d) => {
@@ -572,33 +727,71 @@ export default function BenchmarkVisualizer() {
                       })}
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#303341" />
-                    <XAxis
-                      dataKey="model"
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                      fontSize={12}
-                      stroke="#9ca3af"
-                    />
-                    <YAxis
-                      label={{
-                        value: "Response Time (s)",
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "#9ca3af",
-                      }}
-                      stroke="#9ca3af"
-                    />
+                    {isMobile ? (
+                      <>
+                        <XAxis
+                          type="number"
+                          label={{
+                            value: "Response Time (s)",
+                            position: "insideBottom",
+                            offset: -10,
+                            fill: "#9ca3af",
+                          }}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="model"
+                          width={12}
+                          tick={{ fontSize: 12, fill: "#9ca3af" }}
+                          tickFormatter={(v: string) => truncateLabel(v)}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <XAxis
+                          dataKey="model"
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          fontSize={12}
+                          stroke="#9ca3af"
+                        />
+                        <YAxis
+                          label={{
+                            value: "Response Time (s)",
+                            angle: -90,
+                            position: "insideLeft",
+                            fill: "#9ca3af",
+                          }}
+                          stroke="#9ca3af"
+                        />
+                      </>
+                    )}
                     <ChartTooltip
                       content={<ChartTooltipContent />}
-                      formatter={(value: any) => [`${value}s`, "Response Time"]}
+                      formatter={(value: any) => [
+                        `Average response time: ${value} seconds`,
+                      ]}
                       labelFormatter={(label: string) => `Model: ${label}`}
                     />
-                    <Bar dataKey="duration" radius={[6, 6, 0, 0]}>
+                    <Bar
+                      dataKey="duration"
+                      radius={isMobile ? [0, 6, 6, 0] : [6, 6, 0, 0]}
+                    >
                       <LabelList
                         dataKey="duration"
-                        position="top"
-                        content={barValueLabel("s", 2)}
+                        position={isMobile ? "right" : "top"}
+                        content={
+                          isMobile
+                            ? barValueLabelHorizontalSmart(
+                                "s",
+                                2,
+                                speedMax || 1
+                              )
+                            : barValueLabel("s", 2)
+                        }
                       />
                       {speedData.map((entry) => (
                         <Cell
@@ -632,10 +825,16 @@ export default function BenchmarkVisualizer() {
                       color: "hsl(142, 76%, 36%)",
                     },
                   }}
-                  className="h-[420px] sm:h-[520px]"
+                  className="h-[420px] sm:h-[520px] w-full"
+                  style={isMobile ? { height: 360 } : undefined}
                 >
                   <ScatterChart
-                    margin={{ top: 10, right: 120, left: 12, bottom: 32 }}
+                    margin={{
+                      top: 10,
+                      right: isMobile ? 12 : 120,
+                      left: 12,
+                      bottom: isMobile ? 16 : 32,
+                    }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#303341" />
                     <XAxis
@@ -696,29 +895,31 @@ export default function BenchmarkVisualizer() {
                           fill={getModelColor(entry.originalModel)}
                         />
                       ))}
-                      <LabelList
-                        dataKey="model"
-                        content={({ x, y, value }: any) => {
-                          const nx =
-                            (typeof x === "number" ? x : Number(x)) || 0;
-                          const ny =
-                            (typeof y === "number" ? y : Number(y)) || 0;
-                          return (
-                            <text
-                              x={nx + 10}
-                              y={ny}
-                              dy={4}
-                              textAnchor="left"
-                              className="pointer-events-none text-xs font-medium fill-neutral-200"
-                              style={{
-                                textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
-                              }}
-                            >
-                              {String(value)}
-                            </text>
-                          );
-                        }}
-                      />
+                      {!isMobile ? (
+                        <LabelList
+                          dataKey="model"
+                          content={({ x, y, value }: any) => {
+                            const nx =
+                              (typeof x === "number" ? x : Number(x)) || 0;
+                            const ny =
+                              (typeof y === "number" ? y : Number(y)) || 0;
+                            return (
+                              <text
+                                x={nx + 10}
+                                y={ny}
+                                dy={4}
+                                textAnchor="left"
+                                className="pointer-events-none text-xs font-medium fill-neutral-200"
+                                style={{
+                                  textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
+                                }}
+                              >
+                                {String(value)}
+                              </text>
+                            );
+                          }}
+                        />
+                      ) : null}
                     </Scatter>
                   </ScatterChart>
                 </ChartContainer>
