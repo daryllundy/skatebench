@@ -1,0 +1,154 @@
+{
+  "rankings": [
+    {
+      "model": "o3",
+      "correct": 183,
+      "incorrect": 27,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 87.14285714285714,
+      "errorRate": 0,
+      "averageDuration": 12363,
+      "totalCost": 0.04627739999999999,
+      "averageCostPerTest": 0.00022036857142857137
+    },
+    {
+      "model": "grok-4",
+      "correct": 157,
+      "incorrect": 42,
+      "errors": 11,
+      "totalTests": 210,
+      "successRate": 74.76190476190476,
+      "errorRate": 5.238095238095238,
+      "averageDuration": 42138,
+      "totalCost": 3.8198002499999992,
+      "averageCostPerTest": 0.018189524999999998
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "correct": 129,
+      "incorrect": 81,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 61.42857142857143,
+      "errorRate": 0,
+      "averageDuration": 10368,
+      "totalCost": 1.9583050000000009,
+      "averageCostPerTest": 0.009325261904761909
+    },
+    {
+      "model": "claude-4-opus",
+      "correct": 102,
+      "incorrect": 108,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 48.57142857142857,
+      "errorRate": 0,
+      "averageDuration": 5954,
+      "totalCost": 0.16238925000000004,
+      "averageCostPerTest": 0.000773282142857143
+    },
+    {
+      "model": "o4-mini",
+      "correct": 95,
+      "incorrect": 115,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 45.23809523809524,
+      "errorRate": 0,
+      "averageDuration": 11338,
+      "totalCost": 0.03975191,
+      "averageCostPerTest": 0.00018929480952380954
+    },
+    {
+      "model": "grok-3-mini",
+      "correct": 74,
+      "incorrect": 136,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 35.23809523809524,
+      "errorRate": 0,
+      "averageDuration": 5663,
+      "totalCost": 0.09071177500000012,
+      "averageCostPerTest": 0.0004319608333333339
+    },
+    {
+      "model": "claude-4-sonnet",
+      "correct": 25,
+      "incorrect": 185,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 11.904761904761903,
+      "errorRate": 0,
+      "averageDuration": 6194,
+      "totalCost": 0.04491990000000002,
+      "averageCostPerTest": 0.0002139042857142858
+    },
+    {
+      "model": "gpt-4o",
+      "correct": 17,
+      "incorrect": 193,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 8.095238095238095,
+      "errorRate": 0,
+      "averageDuration": 695,
+      "totalCost": 0.0029800000000000013,
+      "averageCostPerTest": 0.000014190476190476197
+    },
+    {
+      "model": "gpt-4.1",
+      "correct": 15,
+      "incorrect": 195,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 7.142857142857142,
+      "errorRate": 0,
+      "averageDuration": 597,
+      "totalCost": 0.002446800000000001,
+      "averageCostPerTest": 0.000011651428571428577
+    },
+    {
+      "model": "kimi-k2",
+      "correct": 6,
+      "incorrect": 204,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 2.857142857142857,
+      "errorRate": 0,
+      "averageDuration": 1606,
+      "totalCost": 0.0094388064,
+      "averageCostPerTest": 0.00004494669714285714
+    },
+    {
+      "model": "qwen-3-32b",
+      "correct": 3,
+      "incorrect": 203,
+      "errors": 4,
+      "totalTests": 210,
+      "successRate": 1.4285714285714286,
+      "errorRate": 1.9047619047619049,
+      "averageDuration": 35156,
+      "totalCost": 0.022468194999999996,
+      "averageCostPerTest": 0.00010699140476190474
+    }
+  ],
+  "metadata": {
+    "timestamp": "2025-07-27T03:43:32.933Z",
+    "totalModels": 11,
+    "totalTestsRun": 2310,
+    "overallCorrect": 806,
+    "overallIncorrect": 1489,
+    "overallErrors": 15,
+    "overallSuccessRate": 34.891774891774894,
+    "overallErrorRate": 0.6493506493506493,
+    "totalCost": 6.199489286400007,
+    "averageCostPerTest": 0.0026837615958441585,
+    "config": {
+      "maxConcurrency": 30,
+      "testRunsPerModel": 30,
+      "timeoutSeconds": 200
+    },
+    "testSuite": "Technical Trick Terminology"
+  }
+}
