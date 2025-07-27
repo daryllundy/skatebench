@@ -1,7 +1,7 @@
 {
   "name": "Technical Trick Terminology",
   "description": "Checks what tricks different AI models can correctly name based on a description.",
-  "system_prompt": "You are a skateboard trick naming assistant. You are given a description of a trick and you need to give the name of the trick. If the trick has multiple common names, you should give all of them. Keep answers concise and to the point - don't include names of other tricks.",
+  "system_prompt": "You are a skateboard trick naming assistant. You are given a description of a trick and you need to give the name of the trick. If the trick has multiple names, you should give the common name that most skateboarders would use. Keep answers concise and to the point - don't include names of other tricks.",
   "tests": [
     {
       "prompt": "Board spins 360 degrees backside and flips in the kickflip direction. The skater does not spin.",
@@ -19,11 +19,7 @@
     {
       "prompt": "Board spins 180 degrees frontside and flips in the kickflip direction. The skater does not spin.",
       "answers": ["hardflip"],
-      "negative_answers": [
-        "frontside flip",
-        "hard luck flip",
-        "varial kickflip"
-      ]
+      "negative_answers": ["frontside flip", "hard luck flip"]
     },
     {
       "prompt": "Board spins 180 degrees backside and flips in the kickflip direction. The skater does not spin.",

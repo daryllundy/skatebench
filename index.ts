@@ -550,7 +550,7 @@ async function main() {
       const avgCost =
         totalTests > 0 ? (stats.totalCost / totalTests).toFixed(6) : "0.000000";
       console.log(
-        `${model}: ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms, total cost $${stats.totalCost.toFixed(6)}, avg cost $${avgCost}/test`
+        `${model}: ${(stats.correct / (stats.correct + stats.incorrect + stats.errors)) * 100}% success rate, ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms, total cost $${stats.totalCost.toFixed(6)}, avg cost $${avgCost}/test`
       );
     });
   } catch (error) {
