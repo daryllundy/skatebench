@@ -1,11 +1,12 @@
 export const OUTPUT_DIRECTORY = "./results";
 
-export const MAX_CONCURRENCY = 25;
-export const TEST_RUNS_PER_MODEL = 5;
+export const MAX_CONCURRENCY = 30;
+export const TEST_RUNS_PER_MODEL = 30;
 export const TIMEOUT_SECONDS = 200;
 
 import { type LanguageModel } from "ai";
 import { openrouter } from "@openrouter/ai-sdk-provider";
+
 export type RunnableModel = {
   name: string;
   llm: LanguageModel;
@@ -60,26 +61,41 @@ export const modelsToRun: RunnableModel[] = [
     llm: openrouter("openai/o4-mini", defaultProviderOptions),
     reasoning: true,
   },
-
-  // Unused at this point
   {
-    name: "gemini-2.0-flash",
-    llm: openrouter("google/gemini-2.0-flash-001", defaultProviderOptions),
-  },
-  {
-    name: "claude-3-5-sonnet",
-    llm: openrouter("anthropic/claude-3.5-sonnet", defaultProviderOptions),
-  },
-  {
-    name: "claude-3-7-sonnet",
-    llm: openrouter("anthropic/claude-3.7-sonnet", defaultProviderOptions),
-  },
-  {
-    name: "claude-3-7-sonnet-thinking",
-    llm: openrouter(
-      "anthropic/claude-3.7-sonnet:thinking",
-      defaultProviderOptions
-    ),
+    name: "o3",
+    llm: openrouter("openai/o3", defaultProviderOptions),
     reasoning: true,
   },
+  {
+    name: "gpt-4.1",
+    llm: openrouter("openai/gpt-4.1", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
+    name: "gpt-4o",
+    llm: openrouter("openai/gpt-4o", defaultProviderOptions),
+    reasoning: true,
+  },
+
+  // Unused at this point
+  // {
+  //   name: "gemini-2.0-flash",
+  //   llm: openrouter("google/gemini-2.0-flash-001", defaultProviderOptions),
+  // },
+  // {
+  //   name: "claude-3-5-sonnet",
+  //   llm: openrouter("anthropic/claude-3.5-sonnet", defaultProviderOptions),
+  // },
+  // {
+  //   name: "claude-3-7-sonnet",
+  //   llm: openrouter("anthropic/claude-3.7-sonnet", defaultProviderOptions),
+  // },
+  // {
+  //   name: "claude-3-7-sonnet-thinking",
+  //   llm: openrouter(
+  //     "anthropic/claude-3.7-sonnet:thinking",
+  //     defaultProviderOptions
+  //   ),
+  //   reasoning: true,
+  // },
 ];
