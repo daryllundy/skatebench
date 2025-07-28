@@ -1,4 +1,3 @@
-import technical_test from "./tests/skate-trick-test.json";
 import {
   modelsToRun,
   type RunnableModel,
@@ -8,9 +7,23 @@ import {
   OUTPUT_DIRECTORY,
 } from "./constants";
 import { generateText } from "ai";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, readdir, readFile as fsReadFile } from "fs/promises";
 import { existsSync } from "fs";
-import { join } from "path";
+import { join, basename, extname } from "path";
+
+export type TestCase = {
+  prompt: string;
+  answers: string[];
+  negative_answers?: string[];
+};
+
+export type TestSuite = {
+  id?: string;
+  name: string;
+  description?: string;
+  system_prompt: string;
+  tests: TestCase[];
+};
 
 type WorkItem = {
   model: RunnableModel;
@@ -21,20 +34,48 @@ type WorkItem = {
   originalTestIndex: number;
 };
 
-const workQueue: WorkItem[] = [];
+type PreviousResultEntry = {
+  model: string;
+  prompt: string;
+  expectedAnswers: string[];
+  negativeAnswers?: string[];
+  text: string;
+  correct?: boolean;
+  duration?: number;
+  cost?: number;
+  sourceFile: string;
+};
 
-technical_test.tests.forEach((test, testIndex) => {
-  modelsToRun.map((model) => {
-    workQueue.push({
-      model,
-      system_prompt: technical_test.system_prompt,
-      prompt: test.prompt,
-      answers: test.answers,
-      negative_answers: test.negative_answers,
-      originalTestIndex: testIndex,
-    });
-  });
-});
+function computeSuiteId(
+  suiteFilePathOrId: string | undefined,
+  suiteName: string
+) {
+  if (suiteFilePathOrId && suiteFilePathOrId.trim().length > 0)
+    return suiteFilePathOrId;
+  // Fallback to a slugified version of the suite name
+  return suiteName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function computeTestSignature(input: {
+  system_prompt: string;
+  prompt: string;
+  answers: string[];
+  negative_answers?: string[];
+}) {
+  // Stable signature for matching previous results
+  const normalized = {
+    system_prompt: input.system_prompt.trim(),
+    prompt: input.prompt.trim(),
+    answers: [...input.answers].map((a) => a.trim().toLowerCase()).sort(),
+    negative_answers: (input.negative_answers || [])
+      .map((a) => a.trim().toLowerCase())
+      .sort(),
+  };
+  return JSON.stringify(normalized);
+}
 
 function isCorrect(input: {
   answers: string[];
@@ -135,6 +176,106 @@ async function runTest(input: {
   }
 }
 
+function extractTextFromStoredResult(resultObj: any): string | undefined {
+  if (!resultObj) return undefined;
+  if (typeof resultObj.text === "string") return resultObj.text;
+  if (resultObj.result && typeof resultObj.result.text === "string")
+    return resultObj.result.text;
+  return undefined;
+}
+
+async function findPreviousResultsForSuite(options: {
+  suiteId: string;
+  suite: TestSuite;
+}): Promise<Map<string, PreviousResultEntry[]>> {
+  const { suiteId, suite } = options;
+  const resultsRoot = OUTPUT_DIRECTORY;
+  const map = new Map<string, PreviousResultEntry[]>();
+
+  async function walk(dir: string): Promise<string[]> {
+    const acc: string[] = [];
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          acc.push(...(await walk(full)));
+        } else if (
+          entry.isFile() &&
+          entry.name.endsWith(".json") &&
+          !entry.name.startsWith("summary-")
+        ) {
+          acc.push(full);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return acc;
+  }
+
+  const candidateFiles = [
+    // Prefer structured per-suite directory if exists
+    join(resultsRoot, suiteId),
+    resultsRoot,
+  ];
+
+  const discoveredJsonFiles = new Set<string>();
+  for (const base of candidateFiles) {
+    const files = await walk(base).catch(() => []);
+    files.forEach((f) => discoveredJsonFiles.add(f));
+  }
+
+  for (const file of discoveredJsonFiles) {
+    try {
+      const raw = await fsReadFile(file, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.results || !Array.isArray(parsed.results))
+        continue;
+
+      // Light filter by suite name if present
+      const suiteNameInFile: string | undefined = parsed.metadata?.testSuite;
+      if (suiteNameInFile && suiteNameInFile !== suite.name) continue;
+
+      for (const r of parsed.results) {
+        const prompt: string | undefined = r.prompt;
+        const expectedAnswers: string[] | undefined = r.expectedAnswers;
+        const negativeAnswers: string[] | undefined =
+          r.negativeAnswers || r.negative_answers;
+        const model: string | undefined = r.model;
+        const text = extractTextFromStoredResult(r.result);
+        if (!prompt || !expectedAnswers || !model || !text) continue;
+
+        const signature = computeTestSignature({
+          system_prompt: suite.system_prompt,
+          prompt,
+          answers: expectedAnswers,
+          negative_answers: negativeAnswers,
+        });
+
+        const entry: PreviousResultEntry = {
+          model,
+          prompt,
+          expectedAnswers,
+          negativeAnswers,
+          text,
+          correct: r.result?.correct ?? r.correct,
+          duration: r.duration,
+          cost: r.cost,
+          sourceFile: file,
+        };
+        const list = map.get(signature) || [];
+        list.push(entry);
+        map.set(signature, list);
+      }
+    } catch {
+      // ignore malformed files
+    }
+  }
+
+  return map;
+}
+
 function generateMarkdownReport(
   results: Array<{
     model: string;
@@ -142,16 +283,19 @@ function generateMarkdownReport(
     runNumber: number;
     prompt: string;
     expectedAnswers: string[];
+    negativeAnswers?: string[];
     result?: any;
     error?: string;
     duration: number;
   }>,
-  metadata: any
+  metadata: any,
+  suite: TestSuite
 ): string {
   let markdown = `# ${metadata.testSuite} - Test Results\n\n`;
 
   // Add metadata
   markdown += `**Date:** ${new Date(metadata.timestamp).toLocaleString()}\n`;
+  markdown += `**Version:** ${metadata.version || "(none)"}\n`;
   markdown += `**Total Tests:** ${metadata.totalTests}\n`;
   markdown += `**Successful:** ${metadata.successful}\n`;
   markdown += `**Failed:** ${metadata.failed}\n`;
@@ -177,12 +321,15 @@ function generateMarkdownReport(
 
       markdown += `## Test ${parseInt(testIndex) + 1}\n\n`;
       markdown += `**Prompt:** "${firstResult.prompt}"\n\n`;
-      markdown += `**Expected answers:** ${firstResult.expectedAnswers.map((a) => `"${a}"`).join(", ")}\n\n`;
+      markdown += `**Expected answers:** ${firstResult.expectedAnswers
+        .map((a) => `"${a}"`)
+        .join(", ")}\n\n`;
 
-      // Add negative answers if they exist
-      const testData = technical_test.tests[parseInt(testIndex)];
+      const testData = suite.tests[parseInt(testIndex)];
       if (testData.negative_answers && testData.negative_answers.length > 0) {
-        markdown += `**Negative answers (automatic fail):** ${testData.negative_answers.map((a) => `"${a}"`).join(", ")}\n\n`;
+        markdown += `**Negative answers (automatic fail):** ${testData.negative_answers
+          .map((a) => `"${a}"`)
+          .join(", ")}\n\n`;
       }
 
       // Sort results by model name, then by run number
@@ -201,7 +348,6 @@ function generateMarkdownReport(
             result.result.text ||
             result.result.result?.text ||
             "No text response";
-          // Trim whitespace and normalize newlines
           const answer = rawAnswer.trim().replace(/\s+/g, " ");
           const isCorrect = result.result.correct || false;
           const status = isCorrect ? "✅" : "❌";
@@ -215,15 +361,46 @@ function generateMarkdownReport(
   return markdown;
 }
 
-async function testRunner() {
-  console.log(
-    `Starting test runner with ${technical_test.tests.length} tests, ${modelsToRun.length} models, ${TEST_RUNS_PER_MODEL} runs each`
-  );
-  console.log(
-    `Concurrency limit: ${MAX_CONCURRENCY}, Timeout: ${TIMEOUT_SECONDS}s`
+export type TestRunnerOptions = {
+  suite: TestSuite;
+  suiteFilePath?: string; // used to derive suiteId if provided
+  version?: string; // version label for this run
+};
+
+export async function testRunner(options: TestRunnerOptions) {
+  const { suite, suiteFilePath, version } = options;
+  const suiteId = computeSuiteId(
+    suite.id ||
+      (suiteFilePath
+        ? basename(suiteFilePath, extname(suiteFilePath))
+        : undefined),
+    suite.name
   );
 
+  console.log(
+    `Starting test runner for suite "${suite.name}" (id: ${suiteId}) with ${suite.tests.length} tests, ${modelsToRun.length} models, ${TEST_RUNS_PER_MODEL} runs each`
+  );
+  console.log(
+    `Concurrency limit: ${MAX_CONCURRENCY}, Timeout: ${TIMEOUT_SECONDS}s, Version: ${version || "(none)"}`
+  );
+
+  const workQueue: WorkItem[] = [];
+
+  suite.tests.forEach((test, testIndex) => {
+    modelsToRun.map((model) => {
+      workQueue.push({
+        model,
+        system_prompt: suite.system_prompt,
+        prompt: test.prompt,
+        answers: test.answers,
+        negative_answers: test.negative_answers,
+        originalTestIndex: testIndex,
+      });
+    });
+  });
+
   type TestRun = {
+    type: "execute" | "reuse";
     model: RunnableModel;
     system_prompt: string;
     prompt: string;
@@ -231,7 +408,10 @@ async function testRunner() {
     negative_answers?: string[];
     runNumber: number;
     testIndex: number;
+    reuseFrom?: PreviousResultEntry; // when type === 'reuse'
   };
+
+  const previousMap = await findPreviousResultsForSuite({ suiteId, suite });
 
   const results: Array<{
     model: string;
@@ -239,6 +419,7 @@ async function testRunner() {
     runNumber: number;
     prompt: string;
     expectedAnswers: string[];
+    negativeAnswers?: string[];
     result?: any;
     error?: string;
     duration: number;
@@ -267,33 +448,68 @@ async function testRunner() {
         const startTime = Date.now();
 
         try {
-          console.log(
-            `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
-          );
-          const result = await runTest({
-            model: testRun.model,
-            system_prompt: testRun.system_prompt,
-            prompt: testRun.prompt,
-            answers: testRun.answers,
-            negative_answers: testRun.negative_answers,
-            originalTestIndex: testRun.testIndex,
-          });
-          const duration = Date.now() - startTime;
+          if (testRun.type === "reuse" && testRun.reuseFrom) {
+            const duration = Date.now() - startTime;
+            const reused = testRun.reuseFrom;
+            const text = reused.text;
+            const correct = isCorrect({
+              answers: testRun.answers,
+              negative_answers: testRun.negative_answers,
+              result: text,
+            });
 
-          results.push({
-            model: testRun.model.name,
-            testIndex: testRun.testIndex,
-            runNumber: testRun.runNumber,
-            prompt: testRun.prompt,
-            expectedAnswers: testRun.answers,
-            result,
-            duration,
-            cost: (result as any).cost || 0,
-          });
+            results.push({
+              model: reused.model,
+              testIndex: testRun.testIndex,
+              runNumber: testRun.runNumber,
+              prompt: testRun.prompt,
+              expectedAnswers: testRun.answers,
+              negativeAnswers: testRun.negative_answers,
+              result: {
+                text,
+                correct,
+                reused: true,
+                sourceFile: reused.sourceFile,
+              },
+              duration,
+              cost: reused.cost || 0,
+            });
 
-          console.log(
-            `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
-          );
+            console.log(
+              `↺ Reused result for test ${testRun.testIndex + 1}.${testRun.runNumber} on ${reused.model} from ${basename(
+                reused.sourceFile
+              )}`
+            );
+          } else {
+            console.log(
+              `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
+            );
+            const runResult = await runTest({
+              model: testRun.model,
+              system_prompt: testRun.system_prompt,
+              prompt: testRun.prompt,
+              answers: testRun.answers,
+              negative_answers: testRun.negative_answers,
+              originalTestIndex: testRun.testIndex,
+            });
+            const duration = Date.now() - startTime;
+
+            results.push({
+              model: testRun.model.name,
+              testIndex: testRun.testIndex,
+              runNumber: testRun.runNumber,
+              prompt: testRun.prompt,
+              expectedAnswers: testRun.answers,
+              negativeAnswers: testRun.negative_answers,
+              result: runResult,
+              duration,
+              cost: (runResult as any).cost || 0,
+            });
+
+            console.log(
+              `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
+            );
+          }
         } catch (error) {
           const duration = Date.now() - startTime;
           const errorMessage =
@@ -305,6 +521,7 @@ async function testRunner() {
             runNumber: testRun.runNumber,
             prompt: testRun.prompt,
             expectedAnswers: testRun.answers,
+            negativeAnswers: testRun.negative_answers,
             error: errorMessage,
             duration,
             cost: 0,
@@ -336,22 +553,59 @@ async function testRunner() {
     const items = itemsByTest[testIndex]!;
 
     const jobQueue: TestRun[] = [];
-    for (let runNumber = 1; runNumber <= TEST_RUNS_PER_MODEL; runNumber++) {
-      for (const item of items) {
+
+    // Plan reuse per model where possible
+    for (const item of items) {
+      const signature = computeTestSignature({
+        system_prompt: item.system_prompt,
+        prompt: item.prompt,
+        answers: item.answers,
+        negative_answers: item.negative_answers,
+      });
+      const prev = previousMap.get(signature) || [];
+      // Only keep entries matching the specific model
+      const prevForModel = prev.filter((p) => p.model === item.model.name);
+
+      // Assign reuse jobs first
+      const reuseCount = Math.min(TEST_RUNS_PER_MODEL, prevForModel.length);
+      for (let i = 1; i <= reuseCount; i++) {
         jobQueue.push({
+          type: "reuse",
           model: item.model,
           system_prompt: item.system_prompt,
           prompt: item.prompt,
           answers: item.answers,
           negative_answers: item.negative_answers,
-          runNumber,
+          runNumber: i,
+          testIndex,
+          reuseFrom: prevForModel[i - 1],
+        });
+      }
+      // Then schedule the remaining as execute jobs
+      for (let i = reuseCount + 1; i <= TEST_RUNS_PER_MODEL; i++) {
+        jobQueue.push({
+          type: "execute",
+          model: item.model,
+          system_prompt: item.system_prompt,
+          prompt: item.prompt,
+          answers: item.answers,
+          negative_answers: item.negative_answers,
+          runNumber: i,
           testIndex,
         });
       }
     }
 
+    // Interleave jobs by runNumber across models
+    jobQueue.sort((a, b) => {
+      if (a.runNumber !== b.runNumber) return a.runNumber - b.runNumber;
+      if (a.model.name !== b.model.name)
+        return a.model.name.localeCompare(b.model.name);
+      return 0;
+    });
+
     console.log(
-      `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models`
+      `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models (${jobQueue.filter((j) => j.type === "reuse").length} reused)`
     );
 
     await processJobQueue(jobQueue);
@@ -372,15 +626,16 @@ async function testRunner() {
   // Save results to file
   try {
     // Ensure output directory exists
-    if (!existsSync(OUTPUT_DIRECTORY)) {
-      await mkdir(OUTPUT_DIRECTORY, { recursive: true });
-      console.log(`Created output directory: ${OUTPUT_DIRECTORY}`);
+    const suiteDir = join(OUTPUT_DIRECTORY, suiteId, version || "unversioned");
+    if (!existsSync(suiteDir)) {
+      await mkdir(suiteDir, { recursive: true });
+      console.log(`Created output directory: ${suiteDir}`);
     }
 
     // Generate filename with timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = `test-results-${timestamp}.json`;
-    const filepath = join(OUTPUT_DIRECTORY, filename);
+    const filepath = join(suiteDir, filename);
 
     // Prepare results object with metadata
     const outputData = {
@@ -397,7 +652,9 @@ async function testRunner() {
           testRunsPerModel: TEST_RUNS_PER_MODEL,
           timeoutSeconds: TIMEOUT_SECONDS,
         },
-        testSuite: technical_test.name,
+        testSuite: suite.name,
+        suiteId,
+        version: version || null,
         models: modelsToRun.map((m) => m.name),
       },
       results,
@@ -409,10 +666,11 @@ async function testRunner() {
 
     // Generate and save markdown report
     const markdownFilename = `test-results-${timestamp}.md`;
-    const markdownFilepath = join(OUTPUT_DIRECTORY, markdownFilename);
+    const markdownFilepath = join(suiteDir, markdownFilename);
     const markdownContent = generateMarkdownReport(
       results,
-      outputData.metadata
+      outputData.metadata,
+      suite
     );
 
     await writeFile(markdownFilepath, markdownContent, "utf-8");
@@ -420,7 +678,7 @@ async function testRunner() {
 
     // Generate and save summary JSON
     const summaryFilename = `summary-${timestamp}.json`;
-    const summaryFilepath = join(OUTPUT_DIRECTORY, summaryFilename);
+    const summaryFilepath = join(suiteDir, summaryFilename);
 
     // Calculate model statistics
     const modelStats = results.reduce(
@@ -512,7 +770,9 @@ async function testRunner() {
           testRunsPerModel: TEST_RUNS_PER_MODEL,
           timeoutSeconds: TIMEOUT_SECONDS,
         },
-        testSuite: technical_test.name,
+        testSuite: suite.name,
+        suiteId,
+        version: version || null,
       },
     };
 
@@ -529,69 +789,10 @@ async function testRunner() {
   return results;
 }
 
-// Main execution
-async function main() {
-  try {
-    const results = await testRunner();
-
-    // Could save results to file here if needed
-    console.log("\nFinal Results Summary:");
-    console.log(`Total tests run: ${results.length}`);
-
-    // Group by model for summary
-    const modelSummary = results.reduce(
-      (acc, result) => {
-        if (!acc[result.model]) {
-          acc[result.model] = {
-            correct: 0,
-            incorrect: 0,
-            errors: 0,
-            totalDuration: 0,
-            totalCost: 0,
-          };
-        }
-        if (result.error) {
-          acc[result.model].errors++;
-        } else if (result.result?.correct) {
-          acc[result.model].correct++;
-        } else {
-          acc[result.model].incorrect++;
-        }
-        acc[result.model].totalDuration += result.duration;
-        acc[result.model].totalCost += result.cost;
-        return acc;
-      },
-      {} as Record<
-        string,
-        {
-          correct: number;
-          incorrect: number;
-          errors: number;
-          totalDuration: number;
-          totalCost: number;
-        }
-      >
-    );
-
-    Object.entries(modelSummary).forEach(([model, stats]) => {
-      const totalTests = stats.correct + stats.incorrect + stats.errors;
-      const avgDuration = Math.round(stats.totalDuration / totalTests);
-      const avgCost =
-        totalTests > 0 ? (stats.totalCost / totalTests).toFixed(6) : "0.000000";
-      console.log(
-        `${model}: ${(stats.correct / (stats.correct + stats.incorrect + stats.errors)) * 100}% success rate, ${stats.correct} correct, ${stats.incorrect} incorrect, ${stats.errors} errors, avg ${avgDuration}ms, total cost $${stats.totalCost.toFixed(6)}, avg cost $${avgCost}/test`
-      );
-    });
-  } catch (error) {
-    console.error("Test runner failed:", error);
-    process.exit(1);
-  }
-}
-
-// Export for external use
-export { testRunner };
-
-// Run if this is the main module
-if (import.meta.main) {
-  main();
+// Export utility to load test suites from file path
+export async function loadSuiteFromFile(filePath: string): Promise<TestSuite> {
+  const raw = await fsReadFile(filePath, "utf-8");
+  const json = JSON.parse(raw);
+  // If id is missing, will be computed from filename/name where used
+  return json as TestSuite;
 }
