@@ -1,4 +1,4 @@
-import technical_test from "./tests/technical.json";
+import technical_test from "./tests/skate-trick-test.json";
 import {
   modelsToRun,
   type RunnableModel,
