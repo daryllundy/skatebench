@@ -22,20 +22,20 @@ const defaultProviderOptions = {
 };
 
 export const modelsToRun: RunnableModel[] = [
-  {
-    name: "grok-4",
-    llm: openrouter("x-ai/grok-4", defaultProviderOptions),
-    reasoning: true,
-  },
+  // {
+  //   name: "grok-4",
+  //   llm: openrouter("x-ai/grok-4", defaultProviderOptions),
+  //   reasoning: true,
+  // },
   {
     name: "kimi-k2",
     llm: openrouter("moonshotai/kimi-k2", defaultProviderOptions),
   },
-  {
-    name: "gemini-2.5-pro",
-    llm: openrouter("google/gemini-2.5-pro-preview", defaultProviderOptions),
-    reasoning: true,
-  },
+  // {
+  //   name: "gemini-2.5-pro",
+  //   llm: openrouter("google/gemini-2.5-pro-preview", defaultProviderOptions),
+  //   reasoning: true,
+  // },
   {
     name: "grok-3-mini",
     llm: openrouter("x-ai/grok-3-mini-beta", defaultProviderOptions),
@@ -46,36 +46,36 @@ export const modelsToRun: RunnableModel[] = [
     llm: openrouter("qwen/qwen3-32b", defaultProviderOptions),
     reasoning: true,
   },
-  {
-    name: "claude-4-sonnet",
-    llm: openrouter("anthropic/claude-sonnet-4", defaultProviderOptions),
-    reasoning: true,
-  },
-  {
-    name: "claude-4-opus",
-    llm: openrouter("anthropic/claude-opus-4", defaultProviderOptions),
-    reasoning: true,
-  },
-  {
-    name: "o4-mini",
-    llm: openrouter("openai/o4-mini", defaultProviderOptions),
-    reasoning: true,
-  },
-  {
-    name: "o3",
-    llm: openrouter("openai/o3", defaultProviderOptions),
-    reasoning: true,
-  },
-  {
-    name: "gpt-4.1",
-    llm: openrouter("openai/gpt-4.1", defaultProviderOptions),
-    reasoning: true,
-  },
-  {
-    name: "gpt-4o",
-    llm: openrouter("openai/gpt-4o", defaultProviderOptions),
-    reasoning: true,
-  },
+  // {
+  //   name: "claude-4-sonnet",
+  //   llm: openrouter("anthropic/claude-sonnet-4", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+  // {
+  //   name: "claude-4-opus",
+  //   llm: openrouter("anthropic/claude-opus-4", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+  // {
+  //   name: "o4-mini",
+  //   llm: openrouter("openai/o4-mini", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+  // {
+  //   name: "o3",
+  //   llm: openrouter("openai/o3", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+  // {
+  //   name: "gpt-4.1",
+  //   llm: openrouter("openai/gpt-4.1", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+  // {
+  //   name: "gpt-4o",
+  //   llm: openrouter("openai/gpt-4o", defaultProviderOptions),
+  //   reasoning: true,
+  // },
 
   // Unused at this point
   // {

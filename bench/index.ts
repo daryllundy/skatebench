@@ -46,13 +46,51 @@ type PreviousResultEntry = {
   sourceFile: string;
 };
 
+export type RunnerPlanEvent = {
+  type: "plan";
+  totals: Record<string, { total: number; execute: number; reuse: number }>;
+};
+
+export type RunnerStartEvent = {
+  type: "start";
+  model: string;
+};
+
+export type RunnerDoneEvent = {
+  type: "done";
+  model: string;
+  duration: number;
+  correct: boolean;
+  cost: number;
+};
+
+export type RunnerErrorEvent = {
+  type: "error";
+  model: string;
+  duration: number;
+  error: string;
+};
+
+export type RunnerReuseEvent = {
+  type: "reuse";
+  model: string;
+  correct: boolean;
+  cost: number;
+};
+
+export type RunnerEvent =
+  | RunnerPlanEvent
+  | RunnerStartEvent
+  | RunnerDoneEvent
+  | RunnerErrorEvent
+  | RunnerReuseEvent;
+
 function computeSuiteId(
   suiteFilePathOrId: string | undefined,
   suiteName: string
 ) {
   if (suiteFilePathOrId && suiteFilePathOrId.trim().length > 0)
     return suiteFilePathOrId;
-  // Fallback to a slugified version of the suite name
   return suiteName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -65,7 +103,6 @@ function computeTestSignature(input: {
   answers: string[];
   negative_answers?: string[];
 }) {
-  // Stable signature for matching previous results
   const normalized = {
     system_prompt: input.system_prompt.trim(),
     prompt: input.prompt.trim(),
@@ -105,10 +142,11 @@ async function runTest(input: {
   answers: string[];
   negative_answers?: string[];
   originalTestIndex: number;
+  silent?: boolean;
 }) {
-  const { model, system_prompt, prompt, answers, negative_answers } = input;
+  const { model, system_prompt, prompt, answers, negative_answers, silent } =
+    input;
 
-  // Create a timeout promise with cleanup
   let timeoutId: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(
@@ -118,7 +156,6 @@ async function runTest(input: {
   });
 
   async function internal__testRun() {
-    // Create the test promise
     const testResult = await generateText({
       model: model.llm,
       system: system_prompt,
@@ -141,16 +178,12 @@ async function runTest(input: {
       result: testResult.text,
     });
 
-    // Extract cost from providerMetadata
     let cost = 0;
     if (testResult.providerMetadata) {
-      // Check for openrouter cost
       const openrouterMeta = testResult.providerMetadata.openrouter as any;
       if (openrouterMeta?.usage?.cost) {
         cost = openrouterMeta.usage.cost;
       }
-      // Check for other providers if needed
-      // Add more provider cost extraction logic here as needed
     }
 
     return {
@@ -162,16 +195,13 @@ async function runTest(input: {
     };
   }
 
-  // Race between test and timeout
   try {
     const result = await Promise.race([internal__testRun(), timeoutPromise]);
-    // Clear the timeout since we got a result
     if (timeoutId) clearTimeout(timeoutId);
     return result;
   } catch (error) {
-    // Clear the timeout in case of error too
     if (timeoutId) clearTimeout(timeoutId);
-    console.error(`Test failed for model ${model.name}:`, error);
+    if (!silent) console.error(`Test failed for model ${model.name}:`, error);
     throw error;
   }
 }
@@ -208,17 +238,11 @@ async function findPreviousResultsForSuite(options: {
           acc.push(full);
         }
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
     return acc;
   }
 
-  const candidateFiles = [
-    // Prefer structured per-suite directory if exists
-    join(resultsRoot, suiteId),
-    resultsRoot,
-  ];
+  const candidateFiles = [join(resultsRoot, suiteId), resultsRoot];
 
   const discoveredJsonFiles = new Set<string>();
   for (const base of candidateFiles) {
@@ -233,7 +257,6 @@ async function findPreviousResultsForSuite(options: {
       if (!parsed || !parsed.results || !Array.isArray(parsed.results))
         continue;
 
-      // Light filter by suite name if present
       const suiteNameInFile: string | undefined = parsed.metadata?.testSuite;
       if (suiteNameInFile && suiteNameInFile !== suite.name) continue;
 
@@ -268,9 +291,7 @@ async function findPreviousResultsForSuite(options: {
         list.push(entry);
         map.set(signature, list);
       }
-    } catch {
-      // ignore malformed files
-    }
+    } catch {}
   }
 
   return map;
@@ -293,7 +314,6 @@ function generateMarkdownReport(
 ): string {
   let markdown = `# ${metadata.testSuite} - Test Results\n\n`;
 
-  // Add metadata
   markdown += `**Date:** ${new Date(metadata.timestamp).toLocaleString()}\n`;
   markdown += `**Version:** ${metadata.version || "(none)"}\n`;
   markdown += `**Total Tests:** ${metadata.totalTests}\n`;
@@ -301,7 +321,6 @@ function generateMarkdownReport(
   markdown += `**Failed:** ${metadata.failed}\n`;
   markdown += `**Models:** ${metadata.models.join(", ")}\n\n`;
 
-  // Group results by test index
   const testGroups = results.reduce(
     (acc, result) => {
       if (!acc[result.testIndex]) {
@@ -313,7 +332,6 @@ function generateMarkdownReport(
     {} as Record<number, typeof results>
   );
 
-  // Generate markdown for each test
   Object.entries(testGroups)
     .sort(([a], [b]) => parseInt(a) - parseInt(b))
     .forEach(([testIndex, testResults]) => {
@@ -332,7 +350,6 @@ function generateMarkdownReport(
           .join(", ")}\n\n`;
       }
 
-      // Sort results by model name, then by run number
       const sortedResults = testResults.sort((a, b) => {
         if (a.model !== b.model) {
           return a.model.localeCompare(b.model);
@@ -363,12 +380,14 @@ function generateMarkdownReport(
 
 export type TestRunnerOptions = {
   suite: TestSuite;
-  suiteFilePath?: string; // used to derive suiteId if provided
-  version?: string; // version label for this run
+  suiteFilePath?: string;
+  version?: string;
+  onEvent?: (event: RunnerEvent) => void;
+  silent?: boolean;
 };
 
 export async function testRunner(options: TestRunnerOptions) {
-  const { suite, suiteFilePath, version } = options;
+  const { suite, suiteFilePath, version, onEvent, silent } = options;
   const suiteId = computeSuiteId(
     suite.id ||
       (suiteFilePath
@@ -377,12 +396,14 @@ export async function testRunner(options: TestRunnerOptions) {
     suite.name
   );
 
-  console.log(
-    `Starting test runner for suite "${suite.name}" (id: ${suiteId}) with ${suite.tests.length} tests, ${modelsToRun.length} models, ${TEST_RUNS_PER_MODEL} runs each`
-  );
-  console.log(
-    `Concurrency limit: ${MAX_CONCURRENCY}, Timeout: ${TIMEOUT_SECONDS}s, Version: ${version || "(none)"}`
-  );
+  if (!silent)
+    console.log(
+      `Starting test runner for suite "${suite.name}" (id: ${suiteId}) with ${suite.tests.length} tests, ${modelsToRun.length} models, ${TEST_RUNS_PER_MODEL} runs each`
+    );
+  if (!silent)
+    console.log(
+      `Concurrency limit: ${MAX_CONCURRENCY}, Timeout: ${TIMEOUT_SECONDS}s, Version: ${version || "(none)"}`
+    );
 
   const workQueue: WorkItem[] = [];
 
@@ -408,7 +429,7 @@ export async function testRunner(options: TestRunnerOptions) {
     negative_answers?: string[];
     runNumber: number;
     testIndex: number;
-    reuseFrom?: PreviousResultEntry; // when type === 'reuse'
+    reuseFrom?: PreviousResultEntry;
   };
 
   const previousMap = await findPreviousResultsForSuite({ suiteId, suite });
@@ -426,7 +447,6 @@ export async function testRunner(options: TestRunnerOptions) {
     cost: number;
   }> = [];
 
-  // Group work items by test index
   const itemsByTest = workQueue.reduce(
     (acc, item) => {
       const idx = item.originalTestIndex;
@@ -435,6 +455,35 @@ export async function testRunner(options: TestRunnerOptions) {
     },
     {} as Record<number, WorkItem[]>
   );
+
+  const planTotals: Record<
+    string,
+    { total: number; execute: number; reuse: number }
+  > = {};
+  for (const m of modelsToRun)
+    planTotals[m.name] = { total: 0, execute: 0, reuse: 0 };
+  const sortedTestIndicesForPlan = Object.keys(itemsByTest)
+    .map((k) => parseInt(k))
+    .sort((a, b) => a - b);
+  for (const testIndex of sortedTestIndicesForPlan) {
+    const items = itemsByTest[testIndex]!;
+    for (const item of items) {
+      const signature = computeTestSignature({
+        system_prompt: item.system_prompt,
+        prompt: item.prompt,
+        answers: item.answers,
+        negative_answers: item.negative_answers,
+      });
+      const prev = previousMap.get(signature) || [];
+      const prevForModel = prev.filter((p) => p.model === item.model.name);
+      const reuseCount = Math.min(TEST_RUNS_PER_MODEL, prevForModel.length);
+      const executeCount = TEST_RUNS_PER_MODEL - reuseCount;
+      planTotals[item.model.name].total += TEST_RUNS_PER_MODEL;
+      planTotals[item.model.name].reuse += reuseCount;
+      planTotals[item.model.name].execute += executeCount;
+    }
+  }
+  onEvent?.({ type: "plan", totals: planTotals });
 
   async function processJobQueue(jobQueue: TestRun[]) {
     let activeJobs = 0;
@@ -475,15 +524,24 @@ export async function testRunner(options: TestRunnerOptions) {
               cost: reused.cost || 0,
             });
 
-            console.log(
-              `↺ Reused result for test ${testRun.testIndex + 1}.${testRun.runNumber} on ${reused.model} from ${basename(
-                reused.sourceFile
-              )}`
-            );
+            onEvent?.({
+              type: "reuse",
+              model: reused.model,
+              correct,
+              cost: reused.cost || 0,
+            });
+            if (!silent)
+              console.log(
+                `↺ Reused result for test ${testRun.testIndex + 1}.${testRun.runNumber} on ${reused.model} from ${basename(
+                  reused.sourceFile
+                )}`
+              );
           } else {
-            console.log(
-              `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
-            );
+            onEvent?.({ type: "start", model: testRun.model.name });
+            if (!silent)
+              console.log(
+                `Running test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}`
+              );
             const runResult = await runTest({
               model: testRun.model,
               system_prompt: testRun.system_prompt,
@@ -491,6 +549,7 @@ export async function testRunner(options: TestRunnerOptions) {
               answers: testRun.answers,
               negative_answers: testRun.negative_answers,
               originalTestIndex: testRun.testIndex,
+              silent,
             });
             const duration = Date.now() - startTime;
 
@@ -506,9 +565,17 @@ export async function testRunner(options: TestRunnerOptions) {
               cost: (runResult as any).cost || 0,
             });
 
-            console.log(
-              `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
-            );
+            onEvent?.({
+              type: "done",
+              model: testRun.model.name,
+              duration,
+              correct: (runResult as any).correct ?? false,
+              cost: (runResult as any).cost || 0,
+            });
+            if (!silent)
+              console.log(
+                `✓ Completed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name} in ${duration}ms`
+              );
           }
         } catch (error) {
           const duration = Date.now() - startTime;
@@ -527,9 +594,16 @@ export async function testRunner(options: TestRunnerOptions) {
             cost: 0,
           });
 
-          console.log(
-            `✗ Failed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}: ${errorMessage}`
-          );
+          onEvent?.({
+            type: "error",
+            model: testRun.model.name,
+            duration,
+            error: errorMessage,
+          });
+          if (!silent)
+            console.log(
+              `✗ Failed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}: ${errorMessage}`
+            );
         } finally {
           activeJobs--;
         }
@@ -544,7 +618,6 @@ export async function testRunner(options: TestRunnerOptions) {
     await Promise.all(workers);
   }
 
-  // Build and process jobs one test at a time, interleaving models per run
   const sortedTestIndices = Object.keys(itemsByTest)
     .map((k) => parseInt(k))
     .sort((a, b) => a - b);
@@ -554,7 +627,6 @@ export async function testRunner(options: TestRunnerOptions) {
 
     const jobQueue: TestRun[] = [];
 
-    // Plan reuse per model where possible
     for (const item of items) {
       const signature = computeTestSignature({
         system_prompt: item.system_prompt,
@@ -563,10 +635,8 @@ export async function testRunner(options: TestRunnerOptions) {
         negative_answers: item.negative_answers,
       });
       const prev = previousMap.get(signature) || [];
-      // Only keep entries matching the specific model
       const prevForModel = prev.filter((p) => p.model === item.model.name);
 
-      // Assign reuse jobs first
       const reuseCount = Math.min(TEST_RUNS_PER_MODEL, prevForModel.length);
       for (let i = 1; i <= reuseCount; i++) {
         jobQueue.push({
@@ -581,7 +651,6 @@ export async function testRunner(options: TestRunnerOptions) {
           reuseFrom: prevForModel[i - 1],
         });
       }
-      // Then schedule the remaining as execute jobs
       for (let i = reuseCount + 1; i <= TEST_RUNS_PER_MODEL; i++) {
         jobQueue.push({
           type: "execute",
@@ -596,7 +665,6 @@ export async function testRunner(options: TestRunnerOptions) {
       }
     }
 
-    // Interleave jobs by runNumber across models
     jobQueue.sort((a, b) => {
       if (a.runNumber !== b.runNumber) return a.runNumber - b.runNumber;
       if (a.model.name !== b.model.name)
@@ -604,40 +672,38 @@ export async function testRunner(options: TestRunnerOptions) {
       return 0;
     });
 
-    console.log(
-      `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models (${jobQueue.filter((j) => j.type === "reuse").length} reused)`
-    );
+    if (!silent)
+      console.log(
+        `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models (${jobQueue.filter((j) => j.type === "reuse").length} reused)`
+      );
 
     await processJobQueue(jobQueue);
   }
 
-  console.log(`\nTest runner completed. Total results: ${results.length}`);
+  if (!silent)
+    console.log(`\nTest runner completed. Total results: ${results.length}`);
 
-  // Log summary
   const correct = results.filter((r) => !r.error && r.result?.correct).length;
   const incorrect = results.filter(
     (r) => !r.error && !r.result?.correct
   ).length;
   const errors = results.filter((r) => r.error).length;
-  console.log(
-    `Correct: ${correct}, Incorrect: ${incorrect}, Errors: ${errors}`
-  );
+  if (!silent)
+    console.log(
+      `Correct: ${correct}, Incorrect: ${incorrect}, Errors: ${errors}`
+    );
 
-  // Save results to file
   try {
-    // Ensure output directory exists
     const suiteDir = join(OUTPUT_DIRECTORY, suiteId, version || "unversioned");
     if (!existsSync(suiteDir)) {
       await mkdir(suiteDir, { recursive: true });
-      console.log(`Created output directory: ${suiteDir}`);
+      if (!silent) console.log(`Created output directory: ${suiteDir}`);
     }
 
-    // Generate filename with timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = `test-results-${timestamp}.json`;
     const filepath = join(suiteDir, filename);
 
-    // Prepare results object with metadata
     const outputData = {
       metadata: {
         timestamp: new Date().toISOString(),
@@ -660,11 +726,9 @@ export async function testRunner(options: TestRunnerOptions) {
       results,
     };
 
-    // Write JSON results to file
     await writeFile(filepath, JSON.stringify(outputData, null, 2), "utf-8");
-    console.log(`Results saved to: ${filepath}`);
+    if (!silent) console.log(`Results saved to: ${filepath}`);
 
-    // Generate and save markdown report
     const markdownFilename = `test-results-${timestamp}.md`;
     const markdownFilepath = join(suiteDir, markdownFilename);
     const markdownContent = generateMarkdownReport(
@@ -674,13 +738,11 @@ export async function testRunner(options: TestRunnerOptions) {
     );
 
     await writeFile(markdownFilepath, markdownContent, "utf-8");
-    console.log(`Markdown report saved to: ${markdownFilepath}`);
+    if (!silent) console.log(`Markdown report saved to: ${markdownFilepath}`);
 
-    // Generate and save summary JSON
     const summaryFilename = `summary-${timestamp}.json`;
     const summaryFilepath = join(suiteDir, summaryFilename);
 
-    // Calculate model statistics
     const modelStats = results.reduce(
       (acc, result) => {
         if (!acc[result.model]) {
@@ -718,7 +780,6 @@ export async function testRunner(options: TestRunnerOptions) {
       >
     );
 
-    // Calculate success rates and rank models
     const modelRankings = Object.entries(modelStats)
       .map(([modelName, stats]) => ({
         model: modelName,
@@ -739,7 +800,6 @@ export async function testRunner(options: TestRunnerOptions) {
           stats.totalTests > 0 ? stats.totalCost / stats.totalTests : 0,
       }))
       .sort((a, b) => {
-        // Sort by success rate (descending), then by average duration (ascending) as tiebreaker
         if (b.successRate !== a.successRate) {
           return b.successRate - a.successRate;
         }
@@ -781,18 +841,16 @@ export async function testRunner(options: TestRunnerOptions) {
       JSON.stringify(summaryData, null, 2),
       "utf-8"
     );
-    console.log(`Summary saved to: ${summaryFilepath}`);
+    if (!silent) console.log(`Summary saved to: ${summaryFilepath}`);
   } catch (error) {
-    console.error("Failed to save results to file:", error);
+    if (!silent) console.error("Failed to save results to file:", error);
   }
 
   return results;
 }
 
-// Export utility to load test suites from file path
 export async function loadSuiteFromFile(filePath: string): Promise<TestSuite> {
   const raw = await fsReadFile(filePath, "utf-8");
   const json = JSON.parse(raw);
-  // If id is missing, will be computed from filename/name where used
   return json as TestSuite;
 }
