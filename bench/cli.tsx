@@ -500,15 +500,6 @@ const App: React.FC = () => {
             </Text>{" "}
             avg duration •{" "}
             <Text color="green">${totals.costSum.toFixed(4)}</Text> total cost
-            {overallAvgCost != null ? (
-              <>
-                {" "}
-                • <Text color="green">${overallAvgCost.toFixed(4)}</Text> avg
-                cost/test
-              </>
-            ) : (
-              ""
-            )}
           </Text>
         </Box>
       </Box>

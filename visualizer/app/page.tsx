@@ -308,7 +308,7 @@ export default function BenchmarkVisualizer() {
       <main className="relative mx-auto max-w-7xl px-4 pb-16">
         <Tabs defaultValue="accuracy" className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <TabsList className="max-w-full overflow-x-auto whitespace-nowrap rounded-xl border border-neutral-800 bg-neutral-900/70 p-1">
+            <TabsList className="max-w-full overflow-x-auto overflow-y-hidden whitespace-nowrap rounded-xl border border-neutral-800 bg-neutral-900/70 p-1">
               <TabsTrigger
                 value="accuracy"
                 className="flex items-center gap-2 rounded-md px-4 py-2 text-neutral-300 data-[state=active]:bg-green-600 data-[state=active]:text-white"

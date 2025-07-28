@@ -10,6 +10,7 @@ import { generateText } from "ai";
 import { mkdir, writeFile, readdir, readFile as fsReadFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join, basename, extname } from "path";
+import { createHash } from "crypto";
 
 export type TestCase = {
   prompt: string;
@@ -44,6 +45,7 @@ type PreviousResultEntry = {
   duration?: number;
   cost?: number;
   sourceFile: string;
+  systemPrompt?: string;
 };
 
 export type RunnerPlanEvent = {
@@ -112,6 +114,14 @@ function computeTestSignature(input: {
       .sort(),
   };
   return JSON.stringify(normalized);
+}
+
+function signatureHash(signature: string) {
+  return createHash("sha1").update(signature).digest("hex").slice(0, 12);
+}
+
+function safeFilename(str: string) {
+  return str.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function isCorrect(input: {
@@ -294,6 +304,63 @@ async function findPreviousResultsForSuite(options: {
     } catch {}
   }
 
+  // Also include per-run cache files
+  const cacheDir = join(resultsRoot, "cache", suiteId);
+  const cacheFiles = await walk(cacheDir).catch(() => []);
+  for (const file of cacheFiles) {
+    try {
+      const raw = await fsReadFile(file, "utf-8");
+      const parsed = JSON.parse(raw);
+
+      const model: string | undefined = parsed.model;
+      const prompt: string | undefined = parsed.prompt;
+      const expectedAnswers: string[] | undefined =
+        parsed.answers || parsed.expectedAnswers;
+      const negativeAnswers: string[] | undefined =
+        parsed.negative_answers || parsed.negativeAnswers;
+      const systemPrompt: string | undefined =
+        parsed.system_prompt || parsed.systemPrompt;
+      const text = extractTextFromStoredResult(parsed.result) || parsed.text;
+
+      // Skip non-usable entries (e.g., errors or missing fields)
+      if (!model || !prompt || !expectedAnswers || !text) continue;
+
+      const signature = computeTestSignature({
+        system_prompt: systemPrompt || suite.system_prompt,
+        prompt,
+        answers: expectedAnswers,
+        negative_answers: negativeAnswers,
+      });
+
+      // Safety: if the cache contains system prompt and it differs from the current suite, surface an error
+      if (systemPrompt && systemPrompt !== suite.system_prompt) {
+        throw new Error(
+          `Cached entry system prompt mismatch for ${basename(file)}. Expected current suite system prompt. Delete '${join(resultsRoot, "cache", suiteId)}' to reset cache.`
+        );
+      }
+
+      const entry: PreviousResultEntry = {
+        model,
+        prompt,
+        expectedAnswers,
+        negativeAnswers,
+        text,
+        correct: parsed.result?.correct ?? parsed.correct,
+        duration: parsed.duration,
+        cost: parsed.cost,
+        sourceFile: file,
+        systemPrompt,
+      };
+      const list = map.get(signature) || [];
+      list.push(entry);
+      map.set(signature, list);
+    } catch (e) {
+      // If a mismatch error was thrown above, rethrow to stop the run
+      if (e instanceof Error) throw e;
+      // Otherwise ignore malformed cache files
+    }
+  }
+
   return map;
 }
 
@@ -385,6 +452,75 @@ export type TestRunnerOptions = {
   onEvent?: (event: RunnerEvent) => void;
   silent?: boolean;
 };
+
+async function writeCacheEntry(params: {
+  suiteId: string;
+  suiteName: string;
+  model: string;
+  runNumber: number;
+  testIndex: number;
+  system_prompt: string;
+  prompt: string;
+  answers: string[];
+  negative_answers?: string[];
+  duration: number;
+  cost: number;
+  result?: { text?: string; correct?: boolean };
+  error?: string;
+}) {
+  const {
+    suiteId,
+    suiteName,
+    model,
+    runNumber,
+    testIndex,
+    system_prompt,
+    prompt,
+    answers,
+    negative_answers,
+    duration,
+    cost,
+    result,
+    error,
+  } = params;
+
+  const signature = computeTestSignature({
+    system_prompt,
+    prompt,
+    answers,
+    negative_answers,
+  });
+  const sigHash = signatureHash(signature);
+
+  const dir = join(OUTPUT_DIRECTORY, "cache", suiteId);
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `${safeFilename(model)}__run${runNumber}__${sigHash}__${ts}.json`;
+  const filePath = join(dir, filename);
+
+  const payload = {
+    cacheVersion: 1,
+    timestamp: new Date().toISOString(),
+    suiteId,
+    suiteName,
+    model,
+    runNumber,
+    testIndex,
+    system_prompt,
+    prompt,
+    answers,
+    negative_answers,
+    duration,
+    cost,
+    signature,
+    result: result ? { text: result.text, correct: result.correct } : undefined,
+    error,
+  };
+
+  await writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
+  return filePath;
+}
 
 export async function testRunner(options: TestRunnerOptions) {
   const { suite, suiteFilePath, version, onEvent, silent } = options;
@@ -498,6 +634,24 @@ export async function testRunner(options: TestRunnerOptions) {
 
         try {
           if (testRun.type === "reuse" && testRun.reuseFrom) {
+            // Safety check: ensure cached entry matches current test definition
+            const r = testRun.reuseFrom;
+            if (
+              r.systemPrompt &&
+              (r.systemPrompt !== testRun.system_prompt ||
+                r.prompt !== testRun.prompt ||
+                JSON.stringify(r.expectedAnswers) !==
+                  JSON.stringify(testRun.answers) ||
+                JSON.stringify(r.negativeAnswers || []) !==
+                  JSON.stringify(testRun.negative_answers || []))
+            ) {
+              throw new Error(
+                `Cached result mismatch for model ${r.model} test ${testRun.testIndex + 1}.${testRun.runNumber} from ${basename(
+                  r.sourceFile
+                )}`
+              );
+            }
+
             const duration = Date.now() - startTime;
             const reused = testRun.reuseFrom;
             const text = reused.text;
@@ -565,6 +719,34 @@ export async function testRunner(options: TestRunnerOptions) {
               cost: (runResult as any).cost || 0,
             });
 
+            // Write to per-run cache immediately
+            try {
+              await writeCacheEntry({
+                suiteId,
+                suiteName: suite.name,
+                model: testRun.model.name,
+                runNumber: testRun.runNumber,
+                testIndex: testRun.testIndex,
+                system_prompt: testRun.system_prompt,
+                prompt: testRun.prompt,
+                answers: testRun.answers,
+                negative_answers: testRun.negative_answers,
+                duration,
+                cost: (runResult as any).cost || 0,
+                result: {
+                  text:
+                    (runResult as any).result?.text || (runResult as any).text,
+                  correct: (runResult as any).correct,
+                },
+              });
+            } catch (e) {
+              if (!silent)
+                console.warn(
+                  `Failed to write cache for ${testRun.model.name} test ${testRun.testIndex + 1}.${testRun.runNumber}:`,
+                  e
+                );
+            }
+
             onEvent?.({
               type: "done",
               model: testRun.model.name,
@@ -594,6 +776,30 @@ export async function testRunner(options: TestRunnerOptions) {
             cost: 0,
           });
 
+          // Even on error, write a cache entry to allow post-mortem and avoid losing progress
+          try {
+            await writeCacheEntry({
+              suiteId,
+              suiteName: suite.name,
+              model: testRun.model.name,
+              runNumber: testRun.runNumber,
+              testIndex: testRun.testIndex,
+              system_prompt: testRun.system_prompt,
+              prompt: testRun.prompt,
+              answers: testRun.answers,
+              negative_answers: testRun.negative_answers,
+              duration,
+              cost: 0,
+              error: errorMessage,
+            });
+          } catch (e) {
+            if (!silent)
+              console.warn(
+                `Failed to write cache (error case) for ${testRun.model.name} test ${testRun.testIndex + 1}.${testRun.runNumber}:`,
+                e
+              );
+          }
+
           onEvent?.({
             type: "error",
             model: testRun.model.name,
@@ -622,10 +828,11 @@ export async function testRunner(options: TestRunnerOptions) {
     .map((k) => parseInt(k))
     .sort((a, b) => a - b);
 
+  // Build a single global job queue so tests can interleave across stages
+  const globalJobQueue: TestRun[] = [];
+
   for (const testIndex of sortedTestIndices) {
     const items = itemsByTest[testIndex]!;
-
-    const jobQueue: TestRun[] = [];
 
     for (const item of items) {
       const signature = computeTestSignature({
@@ -639,7 +846,7 @@ export async function testRunner(options: TestRunnerOptions) {
 
       const reuseCount = Math.min(TEST_RUNS_PER_MODEL, prevForModel.length);
       for (let i = 1; i <= reuseCount; i++) {
-        jobQueue.push({
+        globalJobQueue.push({
           type: "reuse",
           model: item.model,
           system_prompt: item.system_prompt,
@@ -652,7 +859,7 @@ export async function testRunner(options: TestRunnerOptions) {
         });
       }
       for (let i = reuseCount + 1; i <= TEST_RUNS_PER_MODEL; i++) {
-        jobQueue.push({
+        globalJobQueue.push({
           type: "execute",
           model: item.model,
           system_prompt: item.system_prompt,
@@ -664,21 +871,23 @@ export async function testRunner(options: TestRunnerOptions) {
         });
       }
     }
-
-    jobQueue.sort((a, b) => {
-      if (a.runNumber !== b.runNumber) return a.runNumber - b.runNumber;
-      if (a.model.name !== b.model.name)
-        return a.model.name.localeCompare(b.model.name);
-      return 0;
-    });
-
-    if (!silent)
-      console.log(
-        `Scheduling Test ${testIndex + 1}: ${jobQueue.length} runs across ${items.length} models (${jobQueue.filter((j) => j.type === "reuse").length} reused)`
-      );
-
-    await processJobQueue(jobQueue);
   }
+
+  // Sort to provide a fair interleave: by run number, then test index, then model name
+  globalJobQueue.sort((a, b) => {
+    if (a.runNumber !== b.runNumber) return a.runNumber - b.runNumber;
+    if (a.testIndex !== b.testIndex) return a.testIndex - b.testIndex;
+    if (a.model.name !== b.model.name)
+      return a.model.name.localeCompare(b.model.name);
+    return 0;
+  });
+
+  if (!silent)
+    console.log(
+      `Scheduling all tests: ${globalJobQueue.length} runs across ${suite.tests.length} tests and ${modelsToRun.length} models (${globalJobQueue.filter((j) => j.type === "reuse").length} reused)`
+    );
+
+  await processJobQueue(globalJobQueue);
 
   if (!silent)
     console.log(`\nTest runner completed. Total results: ${results.length}`);
