@@ -828,8 +828,9 @@ export async function testRunner(options: TestRunnerOptions) {
     .map((k) => parseInt(k))
     .sort((a, b) => a - b);
 
-  // Build a single global job queue so tests can interleave across stages
-  const globalJobQueue: TestRun[] = [];
+  // Pre-build separate queues for cached (reuse) vs fresh (execute)
+  const reuseJobs: TestRun[] = [];
+  const executeJobs: TestRun[] = [];
 
   for (const testIndex of sortedTestIndices) {
     const items = itemsByTest[testIndex]!;
@@ -846,7 +847,7 @@ export async function testRunner(options: TestRunnerOptions) {
 
       const reuseCount = Math.min(TEST_RUNS_PER_MODEL, prevForModel.length);
       for (let i = 1; i <= reuseCount; i++) {
-        globalJobQueue.push({
+        reuseJobs.push({
           type: "reuse",
           model: item.model,
           system_prompt: item.system_prompt,
@@ -859,7 +860,7 @@ export async function testRunner(options: TestRunnerOptions) {
         });
       }
       for (let i = reuseCount + 1; i <= TEST_RUNS_PER_MODEL; i++) {
-        globalJobQueue.push({
+        executeJobs.push({
           type: "execute",
           model: item.model,
           system_prompt: item.system_prompt,
@@ -874,20 +875,144 @@ export async function testRunner(options: TestRunnerOptions) {
   }
 
   // Sort to provide a fair interleave: by run number, then test index, then model name
-  globalJobQueue.sort((a, b) => {
+  const fairSort = (a: TestRun, b: TestRun) => {
     if (a.runNumber !== b.runNumber) return a.runNumber - b.runNumber;
     if (a.testIndex !== b.testIndex) return a.testIndex - b.testIndex;
     if (a.model.name !== b.model.name)
       return a.model.name.localeCompare(b.model.name);
     return 0;
-  });
+  };
+  reuseJobs.sort(fairSort);
+  executeJobs.sort(fairSort);
+
+  // Preload all reuse jobs before starting any execution
+  if (reuseJobs.length > 0) {
+    if (!silent)
+      console.log(
+        `Preloading ${reuseJobs.length} cached result${reuseJobs.length === 1 ? "" : "s"}…`
+      );
+    for (const testRun of reuseJobs) {
+      const startTime = Date.now();
+      try {
+        const r = testRun.reuseFrom!;
+        // Safety check: ensure cached entry matches current test definition
+        if (
+          r.systemPrompt &&
+          (r.systemPrompt !== testRun.system_prompt ||
+            r.prompt !== testRun.prompt ||
+            JSON.stringify(r.expectedAnswers) !==
+              JSON.stringify(testRun.answers) ||
+            JSON.stringify(r.negativeAnswers || []) !==
+              JSON.stringify(testRun.negative_answers || []))
+        ) {
+          throw new Error(
+            `Cached result mismatch for model ${r.model} test ${
+              testRun.testIndex + 1
+            }.${testRun.runNumber} from ${basename(r.sourceFile)}`
+          );
+        }
+
+        const duration = Date.now() - startTime;
+        const text = r.text;
+        const correct = isCorrect({
+          answers: testRun.answers,
+          negative_answers: testRun.negative_answers,
+          result: text,
+        });
+
+        results.push({
+          model: r.model,
+          testIndex: testRun.testIndex,
+          runNumber: testRun.runNumber,
+          prompt: testRun.prompt,
+          expectedAnswers: testRun.answers,
+          negativeAnswers: testRun.negative_answers,
+          result: {
+            text,
+            correct,
+            reused: true,
+            sourceFile: r.sourceFile,
+          },
+          duration,
+          cost: r.cost || 0,
+        });
+
+        onEvent?.({
+          type: "reuse",
+          model: r.model,
+          correct,
+          cost: r.cost || 0,
+        });
+        if (!silent)
+          console.log(
+            `↺ Reused result for test ${
+              testRun.testIndex + 1
+            }.${testRun.runNumber} on ${r.model} from ${basename(r.sourceFile)}`
+          );
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        results.push({
+          model: testRun.model.name,
+          testIndex: testRun.testIndex,
+          runNumber: testRun.runNumber,
+          prompt: testRun.prompt,
+          expectedAnswers: testRun.answers,
+          negativeAnswers: testRun.negative_answers,
+          error: errorMessage,
+          duration,
+          cost: 0,
+        });
+
+        try {
+          await writeCacheEntry({
+            suiteId,
+            suiteName: suite.name,
+            model: testRun.model.name,
+            runNumber: testRun.runNumber,
+            testIndex: testRun.testIndex,
+            system_prompt: testRun.system_prompt,
+            prompt: testRun.prompt,
+            answers: testRun.answers,
+            negative_answers: testRun.negative_answers,
+            duration,
+            cost: 0,
+            error: errorMessage,
+          });
+        } catch (e) {
+          if (!silent)
+            console.warn(
+              `Failed to write cache (error case) for ${testRun.model.name} test ${
+                testRun.testIndex + 1
+              }.${testRun.runNumber}:`,
+              e
+            );
+        }
+
+        onEvent?.({
+          type: "error",
+          model: testRun.model.name,
+          duration,
+          error: errorMessage,
+        });
+        if (!silent)
+          console.log(
+            `✗ Failed test ${testRun.testIndex + 1}.${testRun.runNumber} for ${testRun.model.name}: ${errorMessage}`
+          );
+      }
+    }
+  }
 
   if (!silent)
     console.log(
-      `Scheduling all tests: ${globalJobQueue.length} runs across ${suite.tests.length} tests and ${modelsToRun.length} models (${globalJobQueue.filter((j) => j.type === "reuse").length} reused)`
+      `Scheduling ${executeJobs.length} execution${
+        executeJobs.length === 1 ? "" : "s"
+      } across ${suite.tests.length} tests and ${modelsToRun.length} models`
     );
 
-  await processJobQueue(globalJobQueue);
+  await processJobQueue(executeJobs);
 
   if (!silent)
     console.log(`\nTest runner completed. Total results: ${results.length}`);

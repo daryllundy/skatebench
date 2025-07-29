@@ -85,6 +85,19 @@ export const modelsToRun: RunnableModel[] = [
     name: "gemini-2.5-flash",
     llm: openrouter("google/gemini-2.5-flash", defaultProviderOptions),
   },
+  {
+    name: "glm-4.5",
+    llm: openrouter("z-ai/glm-4.5", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
+    name: "qwen3-235b-a22b-thinking",
+    llm: openrouter(
+      "qwen/qwen3-235b-a22b-thinking-2507",
+      defaultProviderOptions
+    ),
+    reasoning: true,
+  },
 
   // Unused at this point
   // {
