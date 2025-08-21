@@ -6,6 +6,7 @@ export const TIMEOUT_SECONDS = 400;
 
 import { type LanguageModel } from "ai";
 import { openrouter } from "@openrouter/ai-sdk-provider";
+import { openai } from "@ai-sdk/openai";
 
 export type RunnableModel = {
   name: string;
@@ -98,6 +99,52 @@ export const modelsToRun: RunnableModel[] = [
     ),
     reasoning: true,
   },
+
+  // {
+  //   name: "gpt-5-new-reasoning-effort-2025-07-25",
+  //   llm: openai("nectarine-alpha-new-reasoning-effort-2025-07-25"),
+  //   reasoning: true,
+  // },
+
+  // {
+  //   name: "gpt-5-reasoning-mini-alpha-2025-07-29",
+  //   llm: openai("gpt-5-reasoning-mini-alpha-2025-07-29"),
+  //   reasoning: true,
+  // },
+
+  // {
+  //   name: "gpt-5-reasoning-nano-alpha-2025-07-31",
+  //   llm: openai("gpt-5-reasoning-nano-alpha-2025-07-31"),
+  //   reasoning: true,
+  // },
+
+  {
+    name: "gpt-5-for-real",
+    llm: openrouter("openai/gpt-5", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
+    name: "gpt-5-mini",
+    llm: openrouter("openai/gpt-5-mini", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
+    name: "gpt-5-nano",
+    llm: openrouter("openai/gpt-5-nano", defaultProviderOptions),
+    reasoning: true,
+  },
+
+  // {
+  //   name: "gpt-oss-120b",
+  //   llm: openrouter("openai/gpt-oss-120b", defaultProviderOptions),
+  //   reasoning: true,
+  // },
+
+  // {
+  //   name: "gpt-oss-20b",
+  //   llm: openrouter("openai/gpt-oss-20b", defaultProviderOptions),
+  //   reasoning: true,
+  // },
 
   // Unused at this point
   // {

@@ -170,6 +170,8 @@ async function runTest(input: {
       model: model.llm,
       system: system_prompt,
       prompt,
+
+      temperature: 1.0,
       providerOptions: {
         openrouter: {
           reasoning: {
@@ -227,8 +229,9 @@ function extractTextFromStoredResult(resultObj: any): string | undefined {
 async function findPreviousResultsForSuite(options: {
   suiteId: string;
   suite: TestSuite;
+  version?: string;
 }): Promise<Map<string, PreviousResultEntry[]>> {
-  const { suiteId, suite } = options;
+  const { suiteId, suite, version } = options;
   const resultsRoot = OUTPUT_DIRECTORY;
   const map = new Map<string, PreviousResultEntry[]>();
 
@@ -252,11 +255,15 @@ async function findPreviousResultsForSuite(options: {
     return acc;
   }
 
-  const candidateFiles = [join(resultsRoot, suiteId), resultsRoot];
+  const suiteDirForVersion = join(
+    resultsRoot,
+    suiteId,
+    version || "unversioned"
+  );
 
   const discoveredJsonFiles = new Set<string>();
-  for (const base of candidateFiles) {
-    const files = await walk(base).catch(() => []);
+  {
+    const files = await walk(suiteDirForVersion).catch(() => []);
     files.forEach((f) => discoveredJsonFiles.add(f));
   }
 
@@ -268,7 +275,9 @@ async function findPreviousResultsForSuite(options: {
         continue;
 
       const suiteNameInFile: string | undefined = parsed.metadata?.testSuite;
+      const versionInFile: string | null = parsed.metadata?.version ?? null;
       if (suiteNameInFile && suiteNameInFile !== suite.name) continue;
+      if ((version || null) !== versionInFile) continue;
 
       for (const r of parsed.results) {
         const prompt: string | undefined = r.prompt;
@@ -304,8 +313,13 @@ async function findPreviousResultsForSuite(options: {
     } catch {}
   }
 
-  // Also include per-run cache files
-  const cacheDir = join(resultsRoot, "cache", suiteId);
+  // Also include per-run cache files, namespaced by version
+  const cacheDir = join(
+    resultsRoot,
+    "cache",
+    suiteId,
+    version || "unversioned"
+  );
   const cacheFiles = await walk(cacheDir).catch(() => []);
   for (const file of cacheFiles) {
     try {
@@ -335,7 +349,14 @@ async function findPreviousResultsForSuite(options: {
       // Safety: if the cache contains system prompt and it differs from the current suite, surface an error
       if (systemPrompt && systemPrompt !== suite.system_prompt) {
         throw new Error(
-          `Cached entry system prompt mismatch for ${basename(file)}. Expected current suite system prompt. Delete '${join(resultsRoot, "cache", suiteId)}' to reset cache.`
+          `Cached entry system prompt mismatch for ${basename(
+            file
+          )}. Expected current suite system prompt. Delete '${join(
+            resultsRoot,
+            "cache",
+            suiteId,
+            version || "unversioned"
+          )}' to reset cache.`
         );
       }
 
@@ -456,6 +477,7 @@ export type TestRunnerOptions = {
 async function writeCacheEntry(params: {
   suiteId: string;
   suiteName: string;
+  version?: string;
   model: string;
   runNumber: number;
   testIndex: number;
@@ -471,6 +493,7 @@ async function writeCacheEntry(params: {
   const {
     suiteId,
     suiteName,
+    version,
     model,
     runNumber,
     testIndex,
@@ -492,7 +515,12 @@ async function writeCacheEntry(params: {
   });
   const sigHash = signatureHash(signature);
 
-  const dir = join(OUTPUT_DIRECTORY, "cache", suiteId);
+  const dir = join(
+    OUTPUT_DIRECTORY,
+    "cache",
+    suiteId,
+    version || "unversioned"
+  );
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
@@ -504,6 +532,7 @@ async function writeCacheEntry(params: {
     timestamp: new Date().toISOString(),
     suiteId,
     suiteName,
+    version: version || null,
     model,
     runNumber,
     testIndex,
@@ -568,7 +597,11 @@ export async function testRunner(options: TestRunnerOptions) {
     reuseFrom?: PreviousResultEntry;
   };
 
-  const previousMap = await findPreviousResultsForSuite({ suiteId, suite });
+  const previousMap = await findPreviousResultsForSuite({
+    suiteId,
+    suite,
+    version,
+  });
 
   const results: Array<{
     model: string;
@@ -652,7 +685,8 @@ export async function testRunner(options: TestRunnerOptions) {
               );
             }
 
-            const duration = Date.now() - startTime;
+            const duration =
+              (testRun.reuseFrom?.duration ?? 0) || Date.now() - startTime;
             const reused = testRun.reuseFrom;
             const text = reused.text;
             const correct = isCorrect({
@@ -724,6 +758,7 @@ export async function testRunner(options: TestRunnerOptions) {
               await writeCacheEntry({
                 suiteId,
                 suiteName: suite.name,
+                version,
                 model: testRun.model.name,
                 runNumber: testRun.runNumber,
                 testIndex: testRun.testIndex,
@@ -781,6 +816,7 @@ export async function testRunner(options: TestRunnerOptions) {
             await writeCacheEntry({
               suiteId,
               suiteName: suite.name,
+              version,
               model: testRun.model.name,
               runNumber: testRun.runNumber,
               testIndex: testRun.testIndex,
@@ -912,7 +948,7 @@ export async function testRunner(options: TestRunnerOptions) {
           );
         }
 
-        const duration = Date.now() - startTime;
+        const duration = (r.duration ?? 0) || Date.now() - startTime;
         const text = r.text;
         const correct = isCorrect({
           answers: testRun.answers,
@@ -970,6 +1006,7 @@ export async function testRunner(options: TestRunnerOptions) {
           await writeCacheEntry({
             suiteId,
             suiteName: suite.name,
+            version,
             model: testRun.model.name,
             runNumber: testRun.runNumber,
             testIndex: testRun.testIndex,
