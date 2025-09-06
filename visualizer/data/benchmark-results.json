@@ -9,8 +9,8 @@
       "successRate": 98.57142857142858,
       "errorRate": 0,
       "averageDuration": 18594,
-      "totalCost": 0.06964487499999998,
-      "averageCostPerTest": 0.0003316422619047618
+      "totalCost": 0.06964487500000001,
+      "averageCostPerTest": 0.0003316422619047619
     },
     {
       "model": "o3-pro",
@@ -61,6 +61,30 @@
       "averageCostPerTest": 0.00940640476190476
     },
     {
+      "model": "deepseek-r1-0528",
+      "correct": 116,
+      "incorrect": 94,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 55.23809523809524,
+      "errorRate": 0,
+      "averageDuration": 30192,
+      "totalCost": 0.4227918346920001,
+      "averageCostPerTest": 0.002013294450914286
+    },
+    {
+      "model": "deepseek-v3.1-thinking",
+      "correct": 114,
+      "incorrect": 96,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 54.285714285714285,
+      "errorRate": 0,
+      "averageDuration": 27361,
+      "totalCost": 0.30041727999999995,
+      "averageCostPerTest": 0.001430558476190476
+    },
+    {
       "model": "gpt-5-mini",
       "correct": 108,
       "incorrect": 102,
@@ -69,8 +93,20 @@
       "successRate": 51.42857142857142,
       "errorRate": 0,
       "averageDuration": 12072,
-      "totalCost": 0.015555275000000007,
-      "averageCostPerTest": 0.00007407273809523813
+      "totalCost": 0.015555274999999999,
+      "averageCostPerTest": 0.00007407273809523809
+    },
+    {
+      "model": "sonoma-sky-alpha",
+      "correct": 96,
+      "incorrect": 114,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 45.714285714285715,
+      "errorRate": 0,
+      "averageDuration": 7098,
+      "totalCost": 0,
+      "averageCostPerTest": 0
     },
     {
       "model": "claude-4-opus",
@@ -83,6 +119,18 @@
       "averageDuration": 0,
       "totalCost": 0.19064025000000004,
       "averageCostPerTest": 0.0009078107142857144
+    },
+    {
+      "model": "deepseek-v3.1",
+      "correct": 95,
+      "incorrect": 115,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 45.23809523809524,
+      "errorRate": 0,
+      "averageDuration": 23038,
+      "totalCost": 0.2725596000000002,
+      "averageCostPerTest": 0.001297902857142858
     },
     {
       "model": "o4-mini",
@@ -121,6 +169,18 @@
       "averageCostPerTest": 0.002321808928571429
     },
     {
+      "model": "glm-4.5v",
+      "correct": 55,
+      "incorrect": 155,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 26.190476190476193,
+      "errorRate": 0,
+      "averageDuration": 11926,
+      "totalCost": 0.34167650999999977,
+      "averageCostPerTest": 0.0016270309999999988
+    },
+    {
       "model": "glm-4.5",
       "correct": 39,
       "incorrect": 171,
@@ -153,8 +213,8 @@
       "successRate": 15.238095238095239,
       "errorRate": 0,
       "averageDuration": 24939,
-      "totalCost": 0.012003335000000004,
-      "averageCostPerTest": 0.00005715873809523811
+      "totalCost": 0.012003335,
+      "averageCostPerTest": 0.0000571587380952381
     },
     {
       "model": "gpt-4o",
@@ -179,6 +239,18 @@
       "averageDuration": 0,
       "totalCost": 0.038606999999999995,
       "averageCostPerTest": 0.00018384285714285713
+    },
+    {
+      "model": "sonoma-dusk-alpha",
+      "correct": 19,
+      "incorrect": 191,
+      "errors": 0,
+      "totalTests": 210,
+      "successRate": 9.047619047619047,
+      "errorRate": 0,
+      "averageDuration": 589,
+      "totalCost": 0,
+      "averageCostPerTest": 0
     },
     {
       "model": "gpt-4.1",
@@ -218,16 +290,16 @@
     }
   ],
   "metadata": {
-    "timestamp": "2025-08-07T20:04:23.170Z",
-    "totalModels": 18,
-    "totalTestsRun": 3780,
-    "overallCorrect": 1461,
-    "overallIncorrect": 2319,
+    "timestamp": "2025-09-06T01:15:19.680Z",
+    "totalModels": 24,
+    "totalTestsRun": 5040,
+    "overallCorrect": 1956,
+    "overallIncorrect": 3084,
     "overallErrors": 0,
-    "overallSuccessRate": 38.65079365079365,
+    "overallSuccessRate": 38.80952380952381,
     "overallErrorRate": 0,
-    "totalCost": 8.974800525799939,
-    "averageCostPerTest": 0.002374285853386227,
+    "totalCost": 10.312245750491947,
+    "averageCostPerTest": 0.0020460805060499893,
     "config": {
       "maxConcurrency": 30,
       "testRunsPerModel": 30,

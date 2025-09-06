@@ -92,6 +92,11 @@ export const modelsToRun: RunnableModel[] = [
     reasoning: true,
   },
   {
+    name: "glm-4.5v",
+    llm: openrouter("z-ai/glm-4.5v", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
     name: "qwen3-235b-a22b-thinking",
     llm: openrouter(
       "qwen/qwen3-235b-a22b-thinking-2507",
@@ -99,24 +104,6 @@ export const modelsToRun: RunnableModel[] = [
     ),
     reasoning: true,
   },
-
-  // {
-  //   name: "gpt-5-new-reasoning-effort-2025-07-25",
-  //   llm: openai("nectarine-alpha-new-reasoning-effort-2025-07-25"),
-  //   reasoning: true,
-  // },
-
-  // {
-  //   name: "gpt-5-reasoning-mini-alpha-2025-07-29",
-  //   llm: openai("gpt-5-reasoning-mini-alpha-2025-07-29"),
-  //   reasoning: true,
-  // },
-
-  // {
-  //   name: "gpt-5-reasoning-nano-alpha-2025-07-31",
-  //   llm: openai("gpt-5-reasoning-nano-alpha-2025-07-31"),
-  //   reasoning: true,
-  // },
 
   {
     name: "gpt-5-for-real",
@@ -132,6 +119,33 @@ export const modelsToRun: RunnableModel[] = [
     name: "gpt-5-nano",
     llm: openrouter("openai/gpt-5-nano", defaultProviderOptions),
     reasoning: true,
+  },
+
+  {
+    name: "deepseek-v3.1",
+    llm: openrouter("deepseek/deepseek-chat-v3.1", defaultProviderOptions),
+  },
+  {
+    name: "deepseek-v3.1-thinking",
+    llm: openrouter("deepseek/deepseek-chat-v3.1", defaultProviderOptions),
+    reasoning: true,
+  },
+
+  {
+    name: "deepseek-r1-0528",
+    llm: openrouter("deepseek/deepseek-r1-0528", defaultProviderOptions),
+    reasoning: true,
+  },
+  {
+    name: "sonoma-dusk-alpha",
+    llm: openrouter("openrouter/sonoma-dusk-alpha", defaultProviderOptions),
+    reasoning: false,
+  },
+
+  {
+    name: "sonoma-sky-alpha",
+    llm: openrouter("openrouter/sonoma-sky-alpha", defaultProviderOptions),
+    reasoning: false,
   },
 
   // {
